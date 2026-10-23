@@ -1,6 +1,6 @@
 // End-to-end check of the unpacked extension in Playwright's Chromium.
 //
-//   pnpm build:ext && node tests/e2e/verify-ext.mjs [--headed] [--profile DIR] [--phase first|reuse|compact|all]
+//   pnpm build:ext:test && node tests/e2e/verify-ext.mjs [--headed] [--profile DIR] [--phase first|reuse|compact|all]
 //
 // Serves tests/pages locally, drives the extension through its own entry points (toolbar button
 // via CDP, the service worker's menu and shortcut handlers, the player's buttons) and checks that
