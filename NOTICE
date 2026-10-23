@@ -51,3 +51,11 @@ spaCy (https://github.com/explosion/spaCy), version 3.8.16, and en_core_web_sm 3
 
 The npm packages bundled with the app and the extension keep their own licences; run
 `pnpm audit:licenses` for the list.
+
+pdf.js data files (pdfjs-dist), copied into pdfjs/ next to their own licence files
+  Decoders in pdfjs/wasm: JBIG2 (PDFium, BSD-3-Clause), OpenJPEG (BSD-2-Clause), qcms and
+  QuickJS (MIT), with Mozilla's wrappers under Apache-2.0, BSD-2-Clause and MIT. ICC profile in
+  pdfjs/iccs: CC0-1.0. Foxit fonts in pdfjs/standard_fonts: BSD-3-Clause (LICENSE_FOXIT).
+  Liberation Sans fonts in pdfjs/standard_fonts: GNU GPL v2 with the Liberation font exception
+  (LICENSE_LIBERATION). These are separate font files that pdf.js uses to draw PDFs whose fonts
+  are not embedded; they are not part of Narrata's code and keep their own licence.

@@ -95,6 +95,15 @@ const data = [
   { name: 'misaki fallback networks by Peter Reid (fallback-*.safetensors)', version: '-', license: 'Apache-2.0', via: 'G2P data' },
   { name: 'part-of-speech tagger (tagger.json.gz), trained by Narrata', version: '-', license: 'MIT', via: 'G2P data' },
   { name: 'spaCy tokenizer rules (spacy-rules.ts)', version: '3.8.16', license: 'MIT', via: 'G2P code' },
+  // pdf.js data copied from pdfjs-dist (see the LICENSE_* files next to each).
+  { name: 'pdf.js JBIG2 and OpenJPEG decoders (pdfjs/wasm)', version: '-', license: 'BSD-3-Clause, BSD-2-Clause, Apache-2.0', via: 'copied (pdfjs/)' },
+  { name: 'pdf.js qcms and QuickJS (pdfjs/wasm)', version: '-', license: 'MIT', via: 'copied (pdfjs/)' },
+  { name: 'pdf.js ICC profile (pdfjs/iccs)', version: '-', license: 'CC0-1.0', via: 'copied (pdfjs/)' },
+  { name: 'pdf.js Foxit standard fonts (pdfjs/standard_fonts)', version: '-', license: 'BSD-3-Clause', via: 'copied (pdfjs/)' },
+  // Font files, not code: used by pdf.js to draw PDFs whose fonts are not embedded. The font
+  // exception keeps them from covering anything they are used with, and they ship as separate
+  // files next to their licence, so they don't change Narrata's licence.
+  { name: 'Liberation Sans fonts (pdfjs/standard_fonts)', version: '-', license: 'GPL-2.0 WITH font-exception', via: 'copied (pdfjs/), font files', allowed: true },
 ];
 
 const BLOCKED = /\b(A|L)?GPL\b|GPL-|UNKNOWN/i;
@@ -102,13 +111,14 @@ let failed = false;
 const w = [64, 32, 12];
 console.log(`${'Component'.padEnd(w[0])} ${'Version'.padEnd(w[1])} ${'License'.padEnd(w[2])} Shipped as`);
 for (const r of [...rows, ...data]) {
-  const bad = BLOCKED.test(r.license);
+  const bad = BLOCKED.test(r.license) && !r.allowed;
   failed ||= bad;
-  console.log(`${r.name.padEnd(w[0])} ${String(r.version).padEnd(w[1])} ${r.license.padEnd(w[2])} ${r.via}${bad ? '   <-- not allowed' : ''}`);
+  const note = bad ? '   <-- not allowed' : r.allowed ? '   (separate font files, allowed)' : '';
+  console.log(`${r.name.padEnd(w[0])} ${String(r.version).padEnd(w[1])} ${r.license.padEnd(w[2])} ${r.via}${note}`);
 }
 console.log(`\n${rows.length} npm packages, ${data.length} data components.`);
 if (failed) {
   console.error('License audit failed: GPL, LGPL, AGPL or unknown licence in the shipped code.');
   process.exit(1);
 }
-console.log('License audit passed: no GPL, LGPL or AGPL code is shipped.');
+console.log('License audit passed: no GPL, LGPL or AGPL code is shipped. The only GPL files are the Liberation Sans fonts, under their font exception.');
