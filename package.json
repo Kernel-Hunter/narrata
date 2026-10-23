@@ -12,7 +12,8 @@
     "build:ext:test": "node scripts/copy-assets.mjs && tsc --noEmit && node scripts/build-ext.mjs --test",
     "preview": "vite preview --port 5331 --strictPort",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "audit:licenses": "node scripts/license-audit.mjs"
   },
   "dependencies": {
     "@fontsource/opendyslexic": "5.3.0",
