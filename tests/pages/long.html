@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A Very Long Report</title>
+<style>body { margin: 0 auto; max-width: 700px; padding: 32px 24px; font: 17px/1.6 Georgia, serif; color: #222; }</style>
+</head>
+<body>
+<article id="report"><h1>A Very Long Report</h1></article>
+<script>
+  // About 60,000 words: enough to check that extraction, alignment and playback stay quick.
+  const subjects = ['The committee', 'The survey team', 'Each district', 'The volunteers', 'The archive', 'Our partners'];
+  const verbs = ['recorded', 'reviewed', 'compared', 'measured', 'described', 'collected'];
+  const objects = ['the river levels', 'the spring harvest', 'the bus timetables', 'the school meals', 'the bridge repairs', 'the library hours'];
+  const tails = ['over the whole year.', 'in every village along the valley.', 'before the winter storms arrived.', 'with help from local schools.', 'and published the results in March.', 'while the old station was rebuilt.'];
+  const report = document.getElementById('report');
+  let n = 0;
+  for (let s = 1; s <= 120; s++) {
+    const h = document.createElement('h2');
+    h.textContent = `Section ${s}`;
+    report.append(h);
+    for (let p = 0; p < 6; p++) {
+      const sentences = [];
+      for (let k = 0; k < 7; k++) {
+        n++;
+        sentences.push(`${subjects[n % 6]} ${verbs[(n * 5) % 6]} ${objects[(n * 7) % 6]} ${tails[(n * 11) % 6]}`);
+      }
+      const el = document.createElement('p');
+      el.textContent = `Paragraph ${s}.${p + 1}. ` + sentences.join(' ');
+      report.append(el);
+    }
+  }
+</script>
+</body>
+</html>

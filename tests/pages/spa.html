@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Field Notes</title>
+<style>
+  body { margin: 0; font: 17px/1.6 Georgia, serif; color: #222; }
+  header { padding: 14px 24px; border-bottom: 1px solid #ddd; font-family: sans-serif; }
+  header a { margin-right: 16px; color: #0a58ca; cursor: pointer; }
+  #app { max-width: 680px; margin: 40px auto; padding: 0 24px; }
+</style>
+</head>
+<body>
+<header><a data-route="/spa/one">Rivers</a><a data-route="/spa/two">Glaciers</a></header>
+<div id="app">Loading…</div>
+<script>
+  const pages = {
+    one: {
+      title: 'How rivers find their way',
+      paras: [
+        'A river does not choose its path in advance. Water runs downhill, gathers in low places, and slowly carves the ground it crosses, so the shape of a river is a record of everything the land has done to it.',
+        'Over thousands of years a river can wander across a whole valley. Each bend grows a little wider as the current cuts into the outside bank and drops sand on the inside bank, until one day the river cuts straight across the loop and leaves a curved lake behind.',
+        'People have tried to keep rivers in one place for as long as they have farmed beside them. Walls, channels and dams hold a river for a while, but the water keeps pushing, and the river remembers where it wanted to go.',
+      ],
+    },
+    two: {
+      title: 'The weight of a glacier',
+      paras: [
+        'A glacier is a river of ice that moves too slowly to watch. Snow falls faster than it melts, presses down on the snow beneath it, and turns into dense blue ice that flows under its own weight.',
+        'As it moves, a glacier drags rocks along its bed and grinds the ground below into fine powder. That powder gives meltwater streams their milky colour and, carried far downstream, makes rich soil for farms.',
+        'When the climate warms, a glacier does not retreat by walking backwards. Its front simply melts faster than the ice behind can replace it, and the edge of the ice creeps uphill year after year.',
+      ],
+    },
+  };
+  function render(path) {
+    const key = path.endsWith('two') ? 'two' : 'one';
+    const p = pages[key];
+    document.title = p.title + ' | Field Notes';
+    const app = document.getElementById('app');
+    app.innerHTML = '';
+    const h = document.createElement('h1');
+    h.textContent = p.title;
+    app.append(h);
+    for (const t of p.paras) {
+      const el = document.createElement('p');
+      el.textContent = t;
+      app.append(el);
+    }
+  }
+  document.querySelector('header').addEventListener('click', (e) => {
+    const r = e.target.closest('[data-route]');
+    if (!r) return;
+    history.pushState({}, '', r.dataset.route);
+    render(r.dataset.route);
+  });
+  setTimeout(() => render(location.pathname), 300);
+</script>
+</body>
+</html>
