@@ -43,14 +43,15 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     (async () => {
       const cache = await caches.open(CACHE);
-      let hit = await cache.match(req, { ignoreSearch: true });
-      if (!hit && req.mode === 'navigate') hit = await cache.match(new URL('./', self.registration.scope).href);
+      // ignoreVary: hosts send "Vary: Origin" and module scripts carry an Origin header.
+      let hit = await cache.match(req, { ignoreSearch: true, ignoreVary: true });
+      if (!hit && req.mode === 'navigate') hit = await cache.match(new URL('./', self.registration.scope).href, { ignoreVary: true });
       if (hit) return isolate(hit);
       try {
         return isolate(await fetch(req));
       } catch (err) {
         if (req.mode === 'navigate') {
-          const shell = await cache.match(new URL('./index.html', self.registration.scope).href);
+          const shell = await cache.match(new URL('./index.html', self.registration.scope).href, { ignoreVary: true });
           if (shell) return isolate(shell);
         }
         throw err;

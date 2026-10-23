@@ -151,7 +151,6 @@ button { cursor: pointer; }
   padding: 0 max(16px, env(safe-area-inset-left)) 0 max(16px, env(safe-area-inset-right));
   background: color-mix(in srgb, var(--paper) 84%, transparent);
   backdrop-filter: saturate(1.4) blur(14px);
-  -webkit-backdrop-filter: saturate(1.4) blur(14px);
   border-bottom: 1px solid transparent;
   transition: border-color 0.2s;
 }
@@ -184,7 +183,7 @@ button { cursor: pointer; }
 }
 .topbar.scrolled .bar-title { opacity: 1; }
 
-.top-actions { display: flex; gap: 2px; align-items: center; }
+.top-actions { grid-column: 3; display: flex; gap: 2px; align-items: center; }
 
 .icon-btn {
   display: inline-grid;
@@ -388,7 +387,7 @@ button { cursor: pointer; }
   overflow-wrap: break-word;
   hyphens: auto;
 }
-:root[data-font='dyslexic'] .blocks { word-spacing: 0.12em; hyphens: none; }
+:root[data-font='dyslexic'] .blocks { hyphens: none; }
 .blocks .b { margin: 0 0 0.9em; }
 .blocks .b-h1,
 .blocks .b-h2,
@@ -527,7 +526,6 @@ button { cursor: pointer; }
   border-radius: 22px;
   background: var(--glass);
   backdrop-filter: saturate(1.6) blur(22px);
-  -webkit-backdrop-filter: saturate(1.6) blur(22px);
   box-shadow: var(--shadow-lg);
   border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
 }

@@ -32,10 +32,11 @@ function serviceWorker(): Plugin {
       };
       walk(outDir);
       const list = files.filter((f) => f !== 'sw.js' && !f.endsWith('.map')).sort();
-      const hash = createHash('sha256');
+      const template = readFileSync('src/pwa/sw.js', 'utf8');
+      const hash = createHash('sha256').update(template);
       for (const f of list) hash.update(f).update(readFileSync(join(outDir, f)));
       const precache = ['./', ...list.filter((f) => f !== 'index.html').map((f) => `./${f}`), './index.html'];
-      const src = readFileSync('src/pwa/sw.js', 'utf8')
+      const src = template
         .replaceAll('__VERSION__', hash.digest('hex').slice(0, 12))
         .replaceAll('__PRECACHE__', JSON.stringify(precache));
       writeFileSync(join(outDir, 'sw.js'), src);
