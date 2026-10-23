@@ -3,7 +3,7 @@ import { type Block, type BlockKind, cleanInline } from '../core/text';
 import type { ParsedDoc } from './types';
 
 const SKIP = new Set(['script', 'style', 'noscript', 'template', 'svg', 'math', 'nav', 'button', 'select', 'textarea', 'iframe', 'object', 'canvas', 'video', 'audio', 'img', 'rt', 'rp', 'head', 'title']);
-const BLOCK = new Set(['p', 'div', 'section', 'article', 'main', 'header', 'footer', 'aside', 'li', 'ul', 'ol', 'dl', 'dd', 'dt', 'blockquote', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'figure', 'figcaption', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption', 'hr', 'address', 'details', 'summary', 'body', 'center', 'form', 'fieldset']);
+export const BLOCK_TAGS = new Set(['p', 'div', 'section', 'article', 'main', 'header', 'footer', 'aside', 'li', 'ul', 'ol', 'dl', 'dd', 'dt', 'blockquote', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'figure', 'figcaption', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption', 'hr', 'address', 'details', 'summary', 'body', 'center', 'form', 'fieldset']);
 
 function kindOf(tag: string): BlockKind | null {
   switch (tag) {
@@ -64,7 +64,7 @@ export function htmlToBlocks(root: Element): Block[] {
       buf += kind === 'pre' ? '\n' : ' ';
       return;
     }
-    if (!BLOCK.has(tag)) {
+    if (!BLOCK_TAGS.has(tag)) {
       for (const c of Array.from(el.childNodes)) walk(c);
       return;
     }
