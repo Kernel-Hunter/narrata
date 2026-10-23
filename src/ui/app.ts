@@ -1067,7 +1067,7 @@ export class App {
         h('li', {}, `Library: ${this.recent.length} document${this.recent.length === 1 ? '' : 's'}.`),
         h('li', {}, `Cross-origin isolated: ${self.crossOriginIsolated ? 'yes (multi-threaded)' : 'no (single thread)'}.`),
       ),
-      h('p', { class: 'small', style: 'margin-top:14px' }, 'Free software under the GNU GPL, version 3 or later. Built with Kokoro, transformers.js, ONNX Runtime Web, eSpeak NG, pdf.js, Readability, fflate, Signalsmith Stretch and mp4-muxer.'),
+      h('p', { class: 'small', style: 'margin-top:14px' }, 'Free software under the MIT License. Built with Kokoro, misaki, transformers.js, ONNX Runtime Web, pdf.js, Readability, fflate, Signalsmith Stretch and mp4-muxer.'),
       h(
         'div',
         { class: 'sheet-actions' },

@@ -74,8 +74,10 @@ writeFileSync(join(out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\
 mkdirSync(join(out, 'icons'), { recursive: true });
 for (const f of readdirSync(join(root, 'extension/logo'))) copyFileSync(join(root, 'extension/logo', f), join(out, 'icons', f));
 
-// 6. Licence next to the code.
+// 6. Licence and third-party notices next to the code.
 copyFileSync(join(root, 'LICENSE'), join(out, 'LICENSE'));
+copyFileSync(join(root, 'NOTICE'), join(out, 'NOTICE'));
+cpSync(join(root, 'LICENSES'), join(out, 'LICENSES'), { recursive: true });
 
 let bytes = 0;
 const walk = (d) => {

@@ -1,0 +1,53 @@
+Narrata
+Copyright (c) 2026 Karim Masmoudi
+Licensed under the MIT License (see LICENSE).
+
+Narrata includes or adapts the following third-party work.
+
+misaki (https://github.com/hexgrad/misaki), version 0.9.4
+  Copyright hexgrad. Licensed under the Apache License, Version 2.0 (LICENSES/Apache-2.0.txt).
+  src/engine/g2p/misaki/lexicon.ts and g2p.ts are a TypeScript port of misaki/en.py, changed to
+  keep character offsets and to read clock times, abbreviations, units and web addresses
+  (normalize.ts). The lexicons in src/engine/g2p/data/en-us.lex.gz and en-gb.lex.gz are misaki's
+  us_gold, us_silver, gb_gold and gb_silver dictionaries, stored in a different format.
+
+misaki's fallback networks (https://huggingface.co/PeterReid/graphemes_to_phonemes_en_us and
+https://huggingface.co/PeterReid/graphemes_to_phonemes_en_gb)
+  By Peter Reid. Licensed under the Apache License, Version 2.0 (LICENSES/Apache-2.0.txt).
+  src/engine/g2p/data/fallback-us.safetensors and fallback-gb.safetensors hold the same weights
+  converted to 16-bit floats.
+
+Kokoro-82M (https://huggingface.co/hexgrad/Kokoro-82M)
+  Copyright hexgrad. Licensed under the Apache License, Version 2.0 (LICENSES/Apache-2.0.txt).
+  The ONNX export (onnx-community/Kokoro-82M-v1.0-ONNX-timestamped) is downloaded at runtime,
+  not bundled.
+
+spaCy (https://github.com/explosion/spaCy), version 3.8.16, and en_core_web_sm 3.8.0
+  src/engine/g2p/misaki/spacy-rules.ts holds spaCy's English tokenizer rules. The part-of-speech
+  tagger in src/engine/g2p/data/tagger.json.gz was trained on public-domain books from Project
+  Gutenberg tagged with en_core_web_sm. spaCy's licence:
+
+  The MIT License (MIT)
+
+  Copyright (C) 2016-2024 ExplosionAI GmbH, 2016 spaCy GmbH, 2015 Matthew Honnibal
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
+
+The npm packages bundled with the app and the extension keep their own licences; run
+`pnpm audit:licenses` for the list.

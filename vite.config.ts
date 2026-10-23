@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { defineConfig, type Plugin } from 'vitest/config';
 
@@ -44,9 +44,25 @@ function serviceWorker(): Plugin {
   };
 }
 
+/** Copies the licence and the third-party notices into the build. */
+function notices(): Plugin {
+  let outDir = 'dist';
+  return {
+    name: 'narrata-notices',
+    apply: 'build',
+    configResolved(c) {
+      outDir = c.build.outDir;
+    },
+    closeBundle() {
+      for (const f of ['LICENSE', 'NOTICE']) copyFileSync(f, join(outDir, f));
+      cpSync('LICENSES', join(outDir, 'LICENSES'), { recursive: true });
+    },
+  };
+}
+
 export default defineConfig({
   base: './',
-  plugins: [serviceWorker()],
+  plugins: [notices(), serviceWorker()],
   server: { port: 5330, strictPort: true, headers: isolationHeaders },
   // No headers in preview on purpose: the production build must isolate itself via the service worker.
   preview: { port: 5331, strictPort: true, headers: {} },

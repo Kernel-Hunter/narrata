@@ -40,7 +40,8 @@ Other things you can do:
 
 - **Voice.** [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), an open text-to-speech model (Apache-2.0), in the [ONNX export with timestamps](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX-timestamped). It runs through [transformers.js](https://github.com/huggingface/transformers.js) and ONNX Runtime Web in a Web Worker, on the GPU with WebGPU when it produces correct audio, and on the CPU with multi-threaded WebAssembly otherwise. Every generated chunk is checked (NaN samples, clipping, audio that stops early) and the app switches to the CPU if the GPU output is wrong.
 - **Storage.** The model is saved in the browser's Origin Private File System, so the second visit loads it from disk in about a second. The app itself is cached by a service worker.
-- **Word highlighting.** The model predicts how long each phoneme lasts (25 ms units). Narrata groups phonemes into words and aligns them with the words on the page, so the highlight follows the voice.
+- **Pronunciation.** Kokoro reads phonemes, not letters. Narrata converts English text with a TypeScript port of [misaki](https://github.com/hexgrad/misaki), the converter Kokoro was trained with: misaki's American and British dictionaries, its rules for capitals, possessives and -s, -ed and -ing endings, and its number reading. A small part-of-speech tagger picks between words spelled alike ("I read" and "I will read"), and misaki's tiny neural network guesses words that are not in the dictionaries. Narrata also reads clock times, common abbreviations, units and web addresses. The dictionaries and models (6 MB in all) are bundled and loaded on first use.
+- **Word highlighting.** The model predicts how long each phoneme lasts (25 ms units). The converter knows which word of the text each phoneme came from, so the highlight follows the voice word by word.
 - **Fast start.** Playback begins with a short first phrase (3 to 8 words), then continues sentence by sentence, generating a few sentences ahead.
 - **Speed without chipmunks.** Audio is generated at normal speed and played through [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/), a time-stretcher that keeps the pitch. All chunks go into one continuous buffer, so there are no gaps between sentences.
 - **Documents.** [pdf.js](https://mozilla.github.io/pdf.js/) for PDFs, [Readability](https://github.com/mozilla/readability) for web pages, and a small EPUB reader built on [fflate](https://github.com/101arrowz/fflate).
@@ -107,9 +108,9 @@ The extension makes one kind of network request: downloading the voice model and
 
 ## License
 
-Narrata is free software under the [GNU General Public License, version 3 or later](LICENSE).
+Narrata is free software under the [MIT License](LICENSE).
 
-Kokoro needs phonemes, not letters. Narrata converts English text to phonemes with [eSpeak NG](https://github.com/espeak-ng/espeak-ng) (GPL-3.0-or-later), compiled to WebAssembly in the `phonemizer` package, and that is why the app as a whole is GPL. The phonemizer sits behind a small interface (`src/engine/g2p/`) so a permissively licensed one can replace it.
+It includes work under other permissive licences, listed in [NOTICE](NOTICE): the misaki port, dictionaries and fallback network (Apache-2.0) and spaCy's tokenizer rules (MIT). `pnpm audit:licenses` builds the app and the extension and lists the licence of every package they contain; it fails if any of them is GPL, LGPL or AGPL.
 
 ## Development
 
@@ -117,15 +118,19 @@ Requires Node.js 20+ and pnpm.
 
 ```sh
 pnpm install
-pnpm dev          # http://localhost:5330
-pnpm test         # unit tests (Vitest)
-pnpm typecheck    # tsc --noEmit
-pnpm build        # production build in dist/
-pnpm preview      # serve dist/ on http://localhost:5331
-pnpm build:ext    # browser extension in dist-ext/
+pnpm dev              # http://localhost:5330
+pnpm test             # unit tests (Vitest)
+pnpm typecheck        # tsc --noEmit
+pnpm build            # production build in dist/
+pnpm preview          # serve dist/ on http://localhost:5331
+pnpm build:ext        # browser extension in dist-ext/
+pnpm build:ext:test   # extension with the hooks for automated checks, in dist-ext-test/
+pnpm audit:licenses   # licences of everything the builds contain
 ```
 
-`node tests/e2e/verify-ext.mjs` loads `dist-ext/` into Playwright's Chromium (`pnpm exec playwright install chromium` once), serves the pages in `tests/pages/` and checks reading, highlighting, speed, controls, selections, frames and restricted pages. The first run downloads the voice model into `.e2e-profile/`.
+`node tests/e2e/verify-ext.mjs` loads `dist-ext-test/` (build it with `pnpm build:ext:test`) into Playwright's Chromium (`pnpm exec playwright install chromium` once), serves the pages in `tests/pages/` and checks reading, highlighting, speed, controls, selections, frames and restricted pages. The first run downloads the voice model into `.e2e-profile/`.
+
+The G2P data in `src/engine/g2p/data/` is generated by the scripts in `scripts/g2p/` (from misaki's dictionaries, the fallback network weights and a tagger trained on Project Gutenberg books tagged by spaCy); each script explains its inputs at the top. `tests/g2p-accuracy.test.ts` compares the G2P with misaki's own output on 1,385 words and sentences in `tests/g2p-eval/`.
 
 `pnpm dev` and `pnpm build` copy the ONNX Runtime and pdf.js runtime files into `public/` so the app never loads code from a CDN. `node scripts/make-fixtures.mjs` regenerates the sample PDF and EPUB in `tests/fixtures/`.
 
@@ -136,7 +141,7 @@ Project layout:
 ```
 src/core/      text model, sentence splitting and chunking, word alignment, timeline math
 src/docs/      readers for text, Markdown, HTML, EPUB and PDF
-src/engine/    TTS worker, model storage (OPFS), phonemizer, voices, audio export
+src/engine/    TTS worker, model storage (OPFS), text to phonemes (g2p/), voices, audio export
 src/audio/     playback engine and audio cache
 src/ui/        reading views, player bar, menus and dialogs
 src/store/     library (IndexedDB) and settings
@@ -147,9 +152,11 @@ tests/         unit tests and fixtures
 
 ## Credits
 
-- [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad, and [kokoro-js](https://github.com/hexgrad/kokoro/tree/main/kokoro.js), whose text normalisation Narrata adapts
+- [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) and [misaki](https://github.com/hexgrad/misaki) by hexgrad
+- misaki's fallback networks by [Peter Reid](https://huggingface.co/PeterReid/graphemes_to_phonemes_en_us)
+- [spaCy](https://spacy.io/) by Explosion, whose English tokenizer rules and tags Narrata's G2P reproduces
+- [Project Gutenberg](https://www.gutenberg.org/), whose public-domain books trained the part-of-speech tagger
 - [transformers.js](https://github.com/huggingface/transformers.js) and [ONNX Runtime Web](https://onnxruntime.ai/)
-- [eSpeak NG](https://github.com/espeak-ng/espeak-ng) through [phonemizer](https://www.npmjs.com/package/phonemizer)
 - [pdf.js](https://github.com/mozilla/pdf.js) and [Readability](https://github.com/mozilla/readability) by Mozilla
 - [fflate](https://github.com/101arrowz/fflate) for reading EPUB files
 - [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/) by Geraint Luff
