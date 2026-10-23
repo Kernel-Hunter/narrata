@@ -8,3 +8,4 @@ public/pdfjs
 dist-ext
 .e2e-profile*
 narrata-e2e-*.json
+__pycache__
