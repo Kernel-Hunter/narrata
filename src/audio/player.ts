@@ -16,6 +16,7 @@ import { AudioCache, type ChunkAudio } from './cache';
 export const SAMPLE_RATE = 24000;
 const LOOKAHEAD = 3;
 const FADE = 0.03;
+const HIGHLIGHT_LEAD = 0.03;
 
 export type PlayerState = 'idle' | 'loading' | 'playing' | 'paused' | 'buffering' | 'ended';
 
@@ -85,7 +86,9 @@ export class Player {
     }
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE, latencyHint: 'playback' });
     this.ctx = ctx;
-    const stretch = await SignalsmithStretch(ctx, { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] });
+    // One (unconnected) input: the processor reads inputList[0] even in buffer mode.
+    const stretch = await SignalsmithStretch(ctx, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    stretch.onprocessorerror = () => this.cb.onError('The audio processor stopped. Reload the page to continue.');
     const fade = ctx.createGain();
     const vol = ctx.createGain();
     fade.gain.value = 0;
@@ -120,18 +123,40 @@ export class Player {
 
   // ---- schedule helpers ----------------------------------------------------
 
+  /**
+   * Apply a change to the node and to the mirror. The node keeps at most one pending future
+   * change (each schedule() drops every change after its current time), so the end-of-buffer
+   * stop is added from tick() only when nothing else is pending.
+   */
   private apply(change: { output: number; input?: number; rate?: number; active?: boolean }) {
-    const seg = this.timeline.schedule(change);
-    void this.stretch!.schedule({ outputTime: seg.output, input: seg.input, rate: seg.rate, active: seg.active });
+    const seg = this.timeline.schedule(change, this.ctx!.currentTime);
+    this.stopScheduled = false;
+    void this.stretch!.schedule({ output: seg.output, input: seg.input, rate: seg.rate, active: seg.active });
   }
 
-  /** Continue from now (resuming after an underrun) and stop exactly at the end of buffered audio. */
+  private stopScheduled = false;
+
+  /** New audio was appended: cancel a pending stop (or resume after an underrun). */
   private reschedule(): void {
     if (!this.started || this.pausedAt !== null || !this.ctx) return;
     const tc = this.ctx.currentTime + this.lead;
     const input = this.timeline.inputAt(tc);
-    this.apply({ output: tc, input, rate: this.rate, active: input < this.bufferedEnd });
-    if (input < this.bufferedEnd) this.apply({ output: tc + (this.bufferedEnd - input) / this.rate, input: this.bufferedEnd, rate: this.rate, active: false });
+    if (input >= this.bufferedEnd) return;
+    this.apply({ output: tc, input, rate: this.rate, active: true });
+  }
+
+  /** Stop exactly at the end of the buffered audio so an underrun never skips input. */
+  private ensureStop(): void {
+    if (!this.started || this.pausedAt !== null || !this.ctx || this.stopScheduled) return;
+    const now = this.ctx.currentTime;
+    if (this.timeline.hasChangeAfter(now)) return;
+    const seg = this.timeline.current;
+    if (!seg.active) return;
+    const tEnd = this.timeline.outputWhenInputReaches(this.bufferedEnd, now);
+    if (tEnd === null || tEnd - now > 1.5) return;
+    const seg2 = this.timeline.schedule({ output: Math.max(tEnd, now + this.lead), input: this.bufferedEnd, rate: this.rate, active: false }, now);
+    void this.stretch!.schedule({ output: seg2.output, input: seg2.input, rate: seg2.rate, active: false });
+    this.stopScheduled = true;
   }
 
   private fadeTo(value: number, at: number) {
@@ -220,8 +245,10 @@ export class Player {
       }
       this.setState('playing');
       this.startTicking();
-    } else if (wasUnderrun) this.stats.underruns++;
-    this.reschedule();
+    } else {
+      if (wasUnderrun) this.stats.underruns++;
+      if (this.stopScheduled || !this.timeline.current.active) this.reschedule();
+    }
     this.fill();
   }
 
@@ -251,7 +278,7 @@ export class Player {
       const now = this.ctx.currentTime;
       this.fade.gain.cancelScheduledValues(now);
       this.fade.gain.setValueAtTime(0, now);
-      void this.stretch.schedule({ outputTime: now, active: false, input: 0, rate: this.rate });
+      void this.stretch.schedule({ output: now, active: false, input: 0, rate: this.rate });
       void this.stretch.dropBuffers();
     }
     this.timeline.reset(this.rate);
@@ -290,10 +317,9 @@ export class Player {
     const input = this.pausedAt;
     this.pausedAt = null;
     const t = this.ctx!.currentTime + this.lead;
-    this.apply({ output: t, input, rate: this.rate, active: true });
+    this.apply({ output: t, input, rate: this.rate, active: input < this.bufferedEnd });
     this.fadeTo(1, t);
     this.setState(input >= this.bufferedEnd - 0.01 && this.nextAppend < this.plan.length ? 'buffering' : 'playing');
-    this.reschedule();
     this.startTicking();
   }
 
@@ -317,8 +343,7 @@ export class Player {
     }
     const tc = this.ctx.currentTime + this.lead;
     const input = this.timeline.inputAt(tc);
-    this.apply({ output: tc, input, rate, active: true });
-    this.reschedule();
+    this.apply({ output: tc, input, rate, active: input < this.bufferedEnd });
   }
 
   setVolume(v: number): void {
@@ -400,7 +425,8 @@ export class Player {
 
   private tick(): void {
     if (!this.ctx || !this.started || !this.pdoc) return;
-    const input = this.timeline.inputAt(this.heardTime());
+    // Light the word a touch early: model word starts land about 40 ms after the audible onset.
+    const input = this.pausedAt ?? this.timeline.inputAt(this.heardTime() + HIGHLIGHT_LEAD);
     const loc = locate(this.placed, input);
     if (loc && loc.word >= 0) this.emitWord(loc.word);
     const atEnd = input >= this.bufferedEnd - 0.005;
@@ -414,6 +440,7 @@ export class Player {
       }
       if (atEnd && this.state === 'playing') this.setState('buffering');
       else if (!atEnd && this.state === 'buffering') this.setState('playing');
+      this.ensureStop();
     }
     this.fill();
   }

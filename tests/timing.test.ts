@@ -63,6 +63,16 @@ describe('Timeline', () => {
     expect(tl.inputAt(10)).toBeCloseTo(8);
   });
 
+  it('drops pending future changes like the stretch node does', () => {
+    const tl = new Timeline();
+    tl.schedule({ output: 0, input: 0, rate: 1, active: true });
+    tl.schedule({ output: 9, input: 9, active: false }, 4); // stop pending at t=9, scheduled at t=4
+    expect(tl.hasChangeAfter(5)).toBe(true);
+    tl.schedule({ output: 5.2, rate: 2 }, 5); // speed change at t=5.2 replaces the pending stop
+    expect(tl.hasChangeAfter(6)).toBe(false);
+    expect(tl.inputAt(6.2)).toBeCloseTo(7.2);
+  });
+
   it('reports when the end of buffered audio will be heard', () => {
     const tl = new Timeline();
     tl.schedule({ output: 2, input: 0, rate: 2, active: true });

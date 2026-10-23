@@ -35,11 +35,12 @@ export class Timeline {
   }
 
   /**
-   * Add a change at output time `change.output`, removing every change at or after that time.
-   * Missing fields continue from the segment in effect at that time. Mirrors
-   * stretch.schedule({ outputTime, ... }) when all fields are passed explicitly.
+   * Add a change at output time `change.output`. Every change at or after `popFrom` (default:
+   * the change time) is removed first. Signalsmith Stretch removes all changes at or after its
+   * current time, so the player passes the AudioContext time as `popFrom`. Missing fields
+   * continue from the segment in effect at the change time.
    */
-  schedule(change: Change): Segment {
+  schedule(change: Change, popFrom = change.output): Segment {
     const prev = this.segmentAt(change.output);
     const input = change.input ?? this.inputAt(change.output);
     const seg: Segment = {
@@ -48,7 +49,8 @@ export class Timeline {
       rate: change.rate ?? prev.rate,
       active: change.active ?? prev.active,
     };
-    while (this.segments.length && this.segments[this.segments.length - 1].output >= change.output) this.segments.pop();
+    const from = Math.min(popFrom, change.output);
+    while (this.segments.length && this.segments[this.segments.length - 1].output >= from) this.segments.pop();
     this.segments.push(seg);
     return seg;
   }
@@ -69,6 +71,11 @@ export class Timeline {
     if (!seg.active || seg.rate <= 0) return null;
     if (input < at) return null;
     return from + (input - at) / seg.rate;
+  }
+
+  /** True when a change is scheduled after time t. */
+  hasChangeAfter(t: number): boolean {
+    return this.segments[this.segments.length - 1].output > t;
   }
 
   get current(): Segment {
