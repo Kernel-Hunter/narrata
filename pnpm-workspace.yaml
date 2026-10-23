@@ -3,3 +3,5 @@ ignoredBuiltDependencies:
   - onnxruntime-node
   - protobufjs
   - sharp
+patchedDependencies:
+  signalsmith-stretch@1.3.2: patches/signalsmith-stretch@1.3.2.patch

@@ -1,0 +1,76 @@
+diff --git a/SignalsmithStretch.js b/SignalsmithStretch.js
+index 7b39b2ae500c8563500c20a4f951878e309d845f..6faac3a2556f5ce2d8c720eb69f804f83e6fa8b3 100644
+--- a/SignalsmithStretch.js
++++ b/SignalsmithStretch.js	
+@@ -309,20 +309,21 @@ function registerWorkletProcessor(Module, audioNodeKey) {
+ 				}
+ 				while (audioBufferIndex < this.audioBuffers.length && audioSamples < inputSamplesEnd) {
+ 					let audioBuffer = this.audioBuffers[audioBufferIndex];
+-					let startIndex = inputSamples - audioSamples; // start index within the audio buffer
+ 					let bufferEnd = audioSamples + audioBuffer[0].length;
+-					// how many samples to copy: min(how many left in the buffer, how many more we need)
+-					let count = Math.min(audioBuffer[0].length - startIndex, inputSamplesEnd - inputSamples);
+-					if (count > 0) {
+-						buffers.forEach((buffer, c) => {
+-							let channelBuffer = audioBuffer[c%audioBuffer.length];
+-							buffer.subarray(blockSamples).set(channelBuffer.subarray(startIndex, startIndex + count));
+-						});
+-						audioSamples += count;
+-						blockSamples += count;
+-					} else { // we're already past this buffer - skip it
+-						audioSamples += audioBuffer[0].length;
++					if (bufferEnd > inputSamples) {
++						// copy the part of this buffer inside [inputSamples, inputSamplesEnd)
++						let startIndex = inputSamples - audioSamples;
++						let count = Math.min(bufferEnd, inputSamplesEnd) - inputSamples;
++						if (count > 0) {
++							buffers.forEach((buffer, c) => {
++								let channelBuffer = audioBuffer[c%audioBuffer.length];
++								buffer.subarray(blockSamples).set(channelBuffer.subarray(startIndex, startIndex + count));
++							});
++							blockSamples += count;
++							inputSamples += count;
++						}
+ 					}
++					audioSamples = bufferEnd;
+ 					++audioBufferIndex;
+ 				}
+ 				if (blockSamples < this.bufferLength) {
+diff --git a/SignalsmithStretch.mjs b/SignalsmithStretch.mjs
+index 7d5cae72e77a84143ed91ba12fc91b806dc4d9d1..ecf22941c60bc9318929f9e729050190c1e2c586 100644
+--- a/SignalsmithStretch.mjs
++++ b/SignalsmithStretch.mjs	
+@@ -310,20 +310,21 @@ function registerWorkletProcessor(Module, audioNodeKey) {
+ 				}
+ 				while (audioBufferIndex < this.audioBuffers.length && audioSamples < inputSamplesEnd) {
+ 					let audioBuffer = this.audioBuffers[audioBufferIndex];
+-					let startIndex = inputSamples - audioSamples; // start index within the audio buffer
+ 					let bufferEnd = audioSamples + audioBuffer[0].length;
+-					// how many samples to copy: min(how many left in the buffer, how many more we need)
+-					let count = Math.min(audioBuffer[0].length - startIndex, inputSamplesEnd - inputSamples);
+-					if (count > 0) {
+-						buffers.forEach((buffer, c) => {
+-							let channelBuffer = audioBuffer[c%audioBuffer.length];
+-							buffer.subarray(blockSamples).set(channelBuffer.subarray(startIndex, startIndex + count));
+-						});
+-						audioSamples += count;
+-						blockSamples += count;
+-					} else { // we're already past this buffer - skip it
+-						audioSamples += audioBuffer[0].length;
++					if (bufferEnd > inputSamples) {
++						// copy the part of this buffer inside [inputSamples, inputSamplesEnd)
++						let startIndex = inputSamples - audioSamples;
++						let count = Math.min(bufferEnd, inputSamplesEnd) - inputSamples;
++						if (count > 0) {
++							buffers.forEach((buffer, c) => {
++								let channelBuffer = audioBuffer[c%audioBuffer.length];
++								buffer.subarray(blockSamples).set(channelBuffer.subarray(startIndex, startIndex + count));
++							});
++							blockSamples += count;
++							inputSamples += count;
++						}
+ 					}
++					audioSamples = bufferEnd;
+ 					++audioBufferIndex;
+ 				}
+ 				if (blockSamples < this.bufferLength) {

@@ -6,8 +6,8 @@
   "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/copy-ort.mjs && vite --port 5330 --strictPort",
-    "build": "node scripts/copy-ort.mjs && tsc --noEmit && vite build",
+    "dev": "node scripts/copy-assets.mjs && vite --port 5330 --strictPort",
+    "build": "node scripts/copy-assets.mjs && tsc --noEmit && vite build",
     "preview": "vite preview --port 5331 --strictPort",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

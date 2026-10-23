@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  signalsmith-stretch@1.3.2: 0c38008b1f0e54b840fa5d9574329424bec485ab2e057cb8991b2dda81c73766
+
 importers:
 
   .:
@@ -31,7 +34,7 @@ importers:
         version: 1.2.1
       signalsmith-stretch:
         specifier: 1.3.2
-        version: 1.3.2
+        version: 1.3.2(patch_hash=0c38008b1f0e54b840fa5d9574329424bec485ab2e057cb8991b2dda81c73766)
     devDependencies:
       '@types/node':
         specifier: ^26.6.5
@@ -1880,7 +1883,7 @@ snapshots:
       '@img/sharp-win32-ia32': 0.34.5
       '@img/sharp-win32-x64': 0.34.5
 
-  signalsmith-stretch@1.3.2: {}
+  signalsmith-stretch@1.3.2(patch_hash=0c38008b1f0e54b840fa5d9574329424bec485ab2e057cb8991b2dda81c73766): {}
 
   source-map-js@1.2.2: {}
 
