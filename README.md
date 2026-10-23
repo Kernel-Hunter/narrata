@@ -58,7 +58,7 @@ Narrata downloads the voice model and the voices from Hugging Face the first tim
 | Safari 26+, Firefox 141+ | WebGPU is new there and not yet tested with this model. If the GPU output fails the check, the CPU path is used. |
 | Older browsers | The CPU path needs WebAssembly with SIMD; multi-threading needs cross-origin isolation, which the service worker provides. |
 
-Generation speed depends on your hardware. On an Apple M5 laptop the GPU path generates about 6 seconds of speech per second and the CPU path (the smaller model, 4 threads) about 1.3 seconds per second. On the CPU path playback can pause briefly at the start and at speeds above 1x while the voice catches up.
+Generation speed depends on your hardware. On an Apple M5 laptop the GPU path generates about 7 seconds of speech per second and the CPU path (the smaller model, 4 threads) about 1.3 seconds per second. On the CPU path playback can pause briefly at the start and at speeds above 1x while the voice catches up.
 
 ## License
 
