@@ -60,6 +60,51 @@ Narrata downloads the voice model and the voices from Hugging Face the first tim
 
 Generation speed depends on your hardware. On an Apple M5 laptop the GPU path generates about 7 seconds of speech per second and the CPU path (the smaller model, 4 threads) about 1.3 seconds per second. On the CPU path playback can pause briefly at the start and at speeds above 1x while the voice catches up.
 
+## Browser extension
+
+The extension reads web pages aloud where they are, with the word being spoken highlighted on the page. It uses the same voice engine as the web app, running locally in the browser.
+
+It is not in the Chrome Web Store yet. To try it:
+
+1. `pnpm install && pnpm build:ext`
+2. Open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and pick the `dist-ext` folder.
+3. On an article, press Alt+Shift+R or click the Narrata button and choose **Read this page**. The first time, the player offers to download the voice (326 MB with a graphics chip, or a 93 MB version that runs on the processor) and shows the size before anything is downloaded.
+
+What it does:
+
+- **Read this page** finds the article (with Readability, on a copy of the page) and reads it, highlighting each word and tinting the sentence on the original page. The page itself is not modified: the highlight is painted with the CSS Custom Highlight API.
+- **Read selection** (Alt+Shift+S, or right-click) reads only the selected text.
+- **Start reading from here** (right-click on a paragraph) starts at that point.
+- Click any word on the page while reading to jump there.
+- The page scrolls gently to follow the voice. Scroll yourself and it stops following; **Back to current** returns to the word being read.
+- The floating player has play and pause, previous and next sentence, speed from 0.5x to 3x, the voice list and a close button. With the player focused, Space plays or pauses and the arrow keys move by sentence. Alt+Shift+P plays or pauses from anywhere. Shortcuts can be changed at `chrome://extensions/shortcuts`.
+- When a page has no clear article, it reads the selection or the largest block of text. On single-page apps, choose **Read this page** again after the content changes. Only the top frame is highlighted; text selected inside a frame is read without highlighting.
+- Chrome does not let extensions read its own pages (`chrome://`), the Web Store, or PDFs in its built-in viewer. The popup says so; for PDFs and EPUBs, use the web app.
+
+![Reading an article with the extension](docs/screenshots/ext-reading.png)
+
+### Permissions
+
+| Permission | Why |
+| --- | --- |
+| `activeTab` | Read the page you are on, only after you click the button, use a shortcut or the right-click menu. Narrata has no access to any site until then. |
+| `scripting` | Add the player and the highlight to that page. |
+| `offscreen` | Run the voice model and play audio in a hidden extension page, so reading continues while you use the page. |
+| `storage` | Remember your speed, voice and model choice. |
+| `contextMenus` | The right-click entries. |
+
+There are no host permissions. The model download from Hugging Face works without them because Hugging Face allows cross-origin requests.
+
+### Privacy
+
+The extension makes one kind of network request: downloading the voice model and voices from Hugging Face, once. The extension's Content Security Policy only allows connections to Hugging Face, so it cannot send anything elsewhere. The text of the pages you read never leaves your browser, and there is no account, analytics or server. The model is stored in the extension's own storage; removing the extension deletes it.
+
+### How it is built
+
+- **Service worker**: context menus, shortcuts, injecting the content script on demand and passing messages between the page and the engine. It keeps no state, so Chrome can stop it at any time.
+- **Offscreen document**: hosts the TTS worker and the audio player from the web app (`src/engine`, `src/audio`). The manifest sets cross-origin isolation for extension pages, so the WebAssembly fallback runs with several threads.
+- **Content script** (`extension/src/content`): extracts the text, aligns it with the page's own text nodes (`textmap.ts`) and draws the player in a shadow root so page styles cannot affect it.
+
 ## License
 
 Narrata is free software under the [GNU General Public License, version 3 or later](LICENSE).
@@ -77,7 +122,10 @@ pnpm test         # unit tests (Vitest)
 pnpm typecheck    # tsc --noEmit
 pnpm build        # production build in dist/
 pnpm preview      # serve dist/ on http://localhost:5331
+pnpm build:ext    # browser extension in dist-ext/
 ```
+
+`node tests/e2e/verify-ext.mjs` loads `dist-ext/` into Playwright's Chromium (`pnpm exec playwright install chromium` once), serves the pages in `tests/pages/` and checks reading, highlighting, speed, controls, selections, frames and restricted pages. The first run downloads the voice model into `.e2e-profile/`.
 
 `pnpm dev` and `pnpm build` copy the ONNX Runtime and pdf.js runtime files into `public/` so the app never loads code from a CDN. `node scripts/make-fixtures.mjs` regenerates the sample PDF and EPUB in `tests/fixtures/`.
 
@@ -93,6 +141,7 @@ src/audio/     playback engine and audio cache
 src/ui/        reading views, player bar, menus and dialogs
 src/store/     library (IndexedDB) and settings
 src/pwa/       service worker and registration
+extension/     browser extension: manifest, service worker, offscreen document, content script, popup
 tests/         unit tests and fixtures
 ```
 
