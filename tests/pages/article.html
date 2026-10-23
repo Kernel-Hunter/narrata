@@ -108,5 +108,6 @@
 <footer>© The Meridian Review · About · Contact · Privacy</footer>
 
 <div class="cookie">We use cookies to understand how our site is used. <br><button>Accept</button> <button>Decline</button></div>
+<script>document.querySelector('.cookie').addEventListener('click', (e) => { if (e.target.tagName === 'BUTTON') e.currentTarget.remove(); });</script>
 </body>
 </html>
