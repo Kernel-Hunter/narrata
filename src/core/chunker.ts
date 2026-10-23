@@ -231,7 +231,34 @@ function leadPunct(text: string, wordStart: number): number {
  * Chunks to play starting at `offset`: the chunk containing the offset is trimmed to start at
  * the word at the offset, and its first words are split off as a fast-start head.
  */
-export function chunksFrom(text: string, chunks: Chunk[], offset: number): Chunk[] {
+/**
+ * Split a chunk at clause punctuation only (never mid-phrase) into parts of at most `max`
+ * characters where possible. Used to ramp up chunk sizes on slow devices.
+ */
+export function splitAtClauses(text: string, chunk: Chunk, max: number): Chunk[] {
+  const len = chunk.end - chunk.start;
+  if (len <= max) return [chunk];
+  const s = text.slice(chunk.start, chunk.end);
+  let best = -1;
+  for (const m of s.matchAll(/[,;:—–]["'”’]?\s+/g)) {
+    const cut = m.index! + m[0].length;
+    if (cut < 20 || len - cut < 20) continue;
+    if (best < 0 || Math.abs(cut - len / 2) < Math.abs(best - len / 2)) best = cut;
+  }
+  if (best < 0) return [chunk];
+  let leftEnd = chunk.start + best;
+  while (leftEnd > chunk.start && /\s/.test(text[leftEnd - 1])) leftEnd--;
+  return [
+    ...splitAtClauses(text, { ...chunk, end: leftEnd, endsWith: 'clause' }, max),
+    ...splitAtClauses(text, { ...chunk, start: chunk.start + best }, max),
+  ];
+}
+
+/** Characters per chunk while ramping up on slow devices, and how many chunks to ramp. */
+export const RAMP_CHARS = 90;
+const RAMP_CHUNKS = 3;
+
+export function chunksFrom(text: string, chunks: Chunk[], offset: number, opts: { ramp?: boolean } = {}): Chunk[] {
   let i = chunks.findIndex((c) => c.end > offset);
   if (i < 0) return [];
   const first = { ...chunks[i] };
@@ -242,5 +269,10 @@ export function chunksFrom(text: string, chunks: Chunk[], offset: number): Chunk
   }
   const head = splitHead(text, first);
   const rest = chunks.slice(i + 1);
-  return head ? [head[0], head[1], ...rest] : [first, ...rest];
+  const plan = head ? [head[0], head[1], ...rest] : [first, ...rest];
+  if (!opts.ramp) return plan;
+  // When generation is barely faster than real time, a long second chunk stalls playback right
+  // after the short first one. Keep the next few chunks short (split at clauses) to build a lead.
+  const ramped = plan.slice(1, 1 + RAMP_CHUNKS).flatMap((c) => splitAtClauses(text, c, RAMP_CHARS));
+  return [plan[0], ...ramped, ...plan.slice(1 + RAMP_CHUNKS)];
 }

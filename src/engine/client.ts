@@ -14,6 +14,9 @@ export interface EngineInfo {
   device?: Device;
   variant?: Variant;
   loadMs?: number;
+  /** Duration of the start-up self-test (one short sentence), a rough speed indicator. */
+  testMs?: number;
+  threads?: number;
   error?: string;
   fallback?: string;
 }
@@ -71,7 +74,7 @@ export class TtsClient {
         this.update({ state: 'loading', stage: m.stage });
         break;
       case 'ready':
-        this.update({ state: 'ready', device: m.device, variant: m.variant, loadMs: m.loadMs, stage: undefined, error: undefined });
+        this.update({ state: 'ready', device: m.device, variant: m.variant, loadMs: m.loadMs, testMs: m.testMs, threads: m.threads, stage: undefined, error: undefined });
         this.readyWaiters.splice(0).forEach((w) => w.resolve());
         void navigator.storage?.persist?.().catch(() => false);
         break;

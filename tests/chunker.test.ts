@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_CHUNK_CHARS, chunksFrom, documentSentences, planChunks, splitHead, splitLong, splitSentences } from '../src/core/chunker';
+import { MAX_CHUNK_CHARS, RAMP_CHARS, chunksFrom, splitAtClauses, documentSentences, planChunks, splitHead, splitLong, splitSentences } from '../src/core/chunker';
 import { buildDocText, tokenizeWords } from '../src/core/text';
 
 const texts = (t: string, spans: { start: number; end: number }[]) => spans.map((s) => t.slice(s.start, s.end));
@@ -97,6 +97,35 @@ describe('fast start', () => {
     const plan = chunksFrom(doc.text, planChunks(doc), offset);
     expect(doc.text.slice(plan[0].start, plan[0].end).startsWith('starts here')).toBe(true);
     expect(doc.text.slice(plan.at(-1)!.start, plan.at(-1)!.end)).toBe('Third.');
+  });
+});
+
+describe('ramp for slow devices', () => {
+  const doc = buildDocText([
+    {
+      kind: 'p',
+      text: 'The lighthouse keeper climbed the spiral stairs every evening, counting each step as the wind pressed against the old stone walls. At the top, he cleaned the great lens, trimmed the wick, and watched the first ships appear on the horizon.',
+    },
+  ]);
+
+  it('splits the chunks after the head at clauses only', () => {
+    const plain = chunksFrom(doc.text, planChunks(doc), 0);
+    const ramped = chunksFrom(doc.text, planChunks(doc), 0, { ramp: true });
+    expect(ramped.length).toBeGreaterThan(plain.length);
+    expect(ramped[0]).toEqual(plain[0]);
+    // Same text overall, nothing lost or repeated.
+    expect(ramped.map((c) => doc.text.slice(c.start, c.end)).join(' ')).toBe(plain.map((c) => doc.text.slice(c.start, c.end)).join(' '));
+    for (const c of ramped.slice(1, -1)) {
+      const t = doc.text.slice(c.start, c.end);
+      if (c.endsWith === 'clause') expect(t).toMatch(/[,;:]$/);
+    }
+    expect(doc.text.slice(ramped[1].start, ramped[1].end)).toBe('the spiral stairs every evening,');
+  });
+
+  it('keeps a long clause whole when there is no punctuation to cut at', () => {
+    const d = buildDocText([{ kind: 'p', text: 'word '.repeat(40).trim() + '.' }]);
+    const c = planChunks(d)[0];
+    expect(splitAtClauses(d.text, c, RAMP_CHARS)).toEqual([c]);
   });
 });
 

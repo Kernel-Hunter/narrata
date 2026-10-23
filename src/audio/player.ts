@@ -260,7 +260,7 @@ export class Player {
     await this.ensureAudio();
     this.clickAt = performance.now();
     this.resetPlayback();
-    this.plan = chunksFrom(this.pdoc.doc.text, this.pdoc.chunks, offset);
+    this.plan = chunksFrom(this.pdoc.doc.text, this.pdoc.chunks, offset, { ramp: this.tts.info.device === 'wasm' });
     if (!this.plan.length) {
       this.setState('ended');
       return;

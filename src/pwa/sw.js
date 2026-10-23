@@ -1,6 +1,6 @@
 /* Narrata service worker: offline cache for the app shell, and cross-origin isolation headers
    (COOP/COEP) for hosts that cannot set them, in the spirit of coi-serviceworker (MIT).
-   The build replaces __VERSION__ and __PRECACHE__. */
+   The build fills in VERSION and PRECACHE (see vite.config.ts). */
 
 const VERSION = '__VERSION__';
 const PRECACHE = __PRECACHE__;

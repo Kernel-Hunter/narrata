@@ -243,6 +243,8 @@ export class App {
 
   private renderWelcome() {
     this.closeDoc();
+    // Nothing to play yet: the player appears with the first document.
+    this.bar.el.hidden = true;
     document.title = 'Narrata';
     const words = 'Reads anything aloud with a natural voice that runs on your device.'.split(' ');
     const hero = h('h1', { class: 'hero-line' }, ...words.flatMap((w, i) => [h('span', { class: 'w' }, w), i < words.length - 1 ? ' ' : '']));
@@ -463,6 +465,7 @@ export class App {
     const pdoc: PlaybackDoc = { doc: loaded.doc, words: tokenizeWords(loaded.doc.text), sentences, chunks: planChunks(loaded.doc, sentences) };
     const view = await this.makeView(loaded);
     this.doc = { meta, loaded, pdoc, view };
+    this.bar.el.hidden = false;
     this.stage.replaceChildren(view.el);
     this.titleEl.textContent = loaded.title;
     document.title = `${loaded.title} · Narrata`;
