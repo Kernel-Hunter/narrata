@@ -1,12 +1,29 @@
 /**
  * Grapheme-to-phoneme conversion. Kokoro takes phonemes, not text, so every voice goes through
- * a G2P. The default implementation uses eSpeak NG (GPL-3.0-or-later). Keeping this interface
- * small lets a permissive implementation (for example a port of misaki, Apache-2.0) replace it.
+ * a G2P. Narrata's is a TypeScript port of misaki, the G2P Kokoro was trained with.
  */
 export type VoiceLang = 'a' | 'b'; // a = American English, b = British English
 
+/** Phonemes for one token of the input text. */
+export interface PhonemeToken {
+  /** Offsets of the token in the input text. */
+  start: number;
+  end: number;
+  /** Phonemes in Kokoro's symbol set (punctuation tokens keep their punctuation, may be empty). */
+  phonemes: string;
+  /** Whitespace that follows the token in the phoneme string ('' or ' '). */
+  whitespace: string;
+}
+
+export interface G2PResult {
+  /** The phoneme string: every token's phonemes followed by its whitespace. */
+  phonemes: string;
+  tokens: PhonemeToken[];
+}
+
 export interface G2P {
   readonly name: string;
-  /** Phonemes in Kokoro's symbol set, words separated by spaces, punctuation kept. */
-  phonemize(text: string, lang: VoiceLang): Promise<string>;
+  /** Load the data for a language ahead of the first call. */
+  prepare(lang: VoiceLang): Promise<void>;
+  phonemize(text: string, lang: VoiceLang): Promise<G2PResult>;
 }

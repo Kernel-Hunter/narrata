@@ -3,12 +3,13 @@
 // generates chunks in priority order (preview > playback > export) and encodes exports.
 
 import { env, StyleTextToSpeech2Model, Tensor } from '@huggingface/transformers';
-import { wordTimings, shiftTimings, type WordTiming } from '../core/align';
+import { tokenTimings, wordTimings, shiftTimings, type WordTiming } from '../core/align';
 import { checkAudio, concatFloat32, encodeWav, shapeJoint } from '../core/audio';
 import { splitLong, type ChunkEnd } from '../core/chunker';
 import { tokenizeWords } from '../core/text';
-import { EspeakG2P } from './g2p/espeak';
-import type { G2P } from './g2p/types';
+import { fetchData } from './g2p/assets';
+import { EnglishG2P } from './g2p/english';
+import type { G2P, PhonemeToken } from './g2p/types';
 import { HF_PREFIX, MODEL_FILES, MODEL_REPO, MODEL_REVISION, ModelStore, SUPPORT_FILES, VOICE_BYTES, downloadSize, voicePath, type Variant } from './model-store';
 import { encodeM4a } from './export-m4a';
 import type { Device, EngineStatus, ExportRequest, FromWorker, GenRequest, ModelChoice, ToWorker } from './protocol';
@@ -21,7 +22,7 @@ const MAX_TOKENS = 510;
 const TEST_SENTENCE = 'Hello! This is a short test of the voice, to check that everything sounds right.';
 
 const store = new ModelStore();
-const g2p: G2P = new EspeakG2P();
+const g2p: G2P = new EnglishG2P(fetchData);
 let model: StyleTextToSpeech2Model | null = null;
 let device: Device = 'wasm';
 let variant: Variant = 'q8';
@@ -138,13 +139,49 @@ async function runModel(phonemes: string[], voice: Float32Array): Promise<{ audi
   return { audio, durations };
 }
 
+/**
+ * Phoneme characters for the model, each with the index of the G2P token it came from (-1 for
+ * the space between tokens). Symbols outside the model's vocabulary are dropped and counted.
+ */
+function modelPhonemes(tokens: PhonemeToken[]): { phonemes: string[]; owner: number[]; dropped: number } {
+  const phonemes: string[] = [];
+  const owner: number[] = [];
+  let dropped = 0;
+  const space = () => {
+    if (phonemes.length && phonemes[phonemes.length - 1] !== ' ') {
+      phonemes.push(' ');
+      owner.push(-1);
+    }
+  };
+  tokens.forEach((t, i) => {
+    for (const c of t.phonemes) {
+      if (c === ' ') space();
+      else if (vocab!.has(c)) {
+        phonemes.push(c);
+        owner.push(i);
+      } else dropped++;
+    }
+    if (t.whitespace) space();
+  });
+  while (phonemes[phonemes.length - 1] === ' ') {
+    phonemes.pop();
+    owner.pop();
+  }
+  return { phonemes, owner, dropped };
+}
+
 /** Phonemize and generate one piece of text, splitting it if it exceeds the token limit. */
 async function synthesize(text: string, voiceId: string): Promise<Synth> {
   const v = voiceById(voiceId);
   const voice = await ensureVoice(v.id);
-  const phonemeStr = await g2p.phonemize(text, v.lang);
-  const phonemes = [...phonemeStr].filter((c) => vocab!.has(c));
-  const words = tokenizeWords(text).map((w) => text.slice(w.start, w.end));
+  const g = await g2p.phonemize(text, v.lang);
+  const { phonemes, owner, dropped } = modelPhonemes(g.tokens);
+  if (dropped) console.warn(`Narrata: ${dropped} phoneme symbols are not in the voice model's vocabulary`, g.phonemes);
+  const textWords = tokenizeWords(text);
+  const words = textWords.map((w) => text.slice(w.start, w.end));
+  const timingFor = (durations: number[] | null, samples: number) =>
+    tokenTimings({ words: textWords, tokens: g.tokens, phonemes, owner, durations, samples, sampleRate: SAMPLE_RATE }) ??
+    wordTimings({ words, phonemes, durations, samples, sampleRate: SAMPLE_RATE });
   if (phonemes.length > MAX_TOKENS) {
     const parts = splitLong(text, { start: 0, end: text.length }, Math.max(20, Math.floor(text.length / 2)));
     const results: Synth[] = [];
@@ -160,14 +197,14 @@ async function synthesize(text: string, voiceId: string): Promise<Synth> {
     return { audio: concatFloat32(results.map((r) => r.audio)), timing: { starts, ends, speechEnd: offset, method: results[0]?.timing.method ?? 'proportional' } };
   }
   let attempt = await runModel(phonemes, voice);
-  let timing = wordTimings({ words, phonemes, durations: attempt.durations, samples: attempt.audio.length, sampleRate: SAMPLE_RATE });
+  let timing = timingFor(attempt.durations, attempt.audio.length);
   let sane = checkAudio(attempt.audio, SAMPLE_RATE, timing.speechEnd);
   if (!sane.ok && device === 'webgpu') {
     // The GPU path produced broken audio: switch to WebAssembly for good and redo this chunk.
     post({ type: 'fallback', from: 'webgpu', to: 'wasm', reason: sane.reason ?? 'bad audio' });
     await loadModel(variant, 'wasm');
     attempt = await runModel(phonemes, voice);
-    timing = wordTimings({ words, phonemes, durations: attempt.durations, samples: attempt.audio.length, sampleRate: SAMPLE_RATE });
+    timing = timingFor(attempt.durations, attempt.audio.length);
     sane = checkAudio(attempt.audio, SAMPLE_RATE, timing.speechEnd);
   }
   if (!sane.ok) throw new Error(`The voice produced unusable audio (${sane.reason}).`);
@@ -186,7 +223,11 @@ async function generateChunk(text: string, voiceId: string, endsWith: ChunkEnd):
 async function prepare(choice: ModelChoice, voiceId: string): Promise<void> {
   const plan = planFor(choice);
   const files = [MODEL_FILES[plan.variant], ...SUPPORT_FILES, { path: voicePath(voiceId), bytes: VOICE_BYTES }];
+  // The G2P data is bundled with the app: load it while the model downloads.
+  const g2pReady = g2p.prepare(voiceById(voiceId).lang);
+  g2pReady.catch(() => {});
   await store.ensure(files, (p) => post({ type: 'download', loaded: p.loaded, total: p.total }));
+  await g2pReady;
   vocab ??= await loadVocab();
   await ensureVoice(voiceId);
   let loadMs = await loadModel(plan.variant, plan.device);
@@ -321,7 +362,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         for (let i = genQueue.length - 1; i >= 0; i--) if (genQueue[i].lane === 'play' && genQueue[i].epoch < playEpoch) genQueue.splice(i, 1);
         break;
       case 'voice':
-        await ensureVoice(m.voice);
+        await Promise.all([ensureVoice(m.voice), g2p.prepare(voiceById(m.voice).lang)]);
         post({ type: 'voice-ready', voice: m.voice });
         break;
       case 'export':
