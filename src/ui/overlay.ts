@@ -6,6 +6,7 @@ import { icons } from './icons';
 export class Popover {
   readonly el: HTMLElement;
   private anchor: HTMLElement | null = null;
+  private focusOnClose: HTMLElement | null = null;
 
   constructor(label: string, private readonly build: (pop: Popover) => Node[]) {
     this.el = h('div', { class: 'pop', popover: 'auto', role: 'dialog', 'aria-label': label });
@@ -13,7 +14,9 @@ export class Popover {
     this.el.addEventListener('toggle', (e) => {
       const open = (e as ToggleEvent).newState === 'open';
       this.anchor?.setAttribute('aria-expanded', String(open));
-      if (!open) this.anchor?.focus({ preventScroll: true });
+      if (open) return;
+      (this.focusOnClose ?? this.anchor)?.focus({ preventScroll: true });
+      this.focusOnClose = null;
     });
   }
 
@@ -36,11 +39,17 @@ export class Popover {
 
   render(): void {
     const scroll = this.el.scrollTop;
+    // Keep keyboard focus on the same control across re-renders.
+    const focusables = () => [...this.el.querySelectorAll<HTMLElement>('button, input')];
+    const focused = focusables().indexOf(document.activeElement as HTMLElement);
     this.el.replaceChildren(...this.build(this));
     this.el.scrollTop = scroll;
+    if (focused >= 0) focusables()[focused]?.focus({ preventScroll: true });
   }
 
-  hide(): void {
+  /** Close the menu; focus returns to its button unless another target is given. */
+  hide(focusTo: HTMLElement | null = null): void {
+    this.focusOnClose = focusTo;
     if (this.open) this.el.hidePopover();
   }
 

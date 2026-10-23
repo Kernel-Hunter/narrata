@@ -377,6 +377,7 @@ button { cursor: pointer; }
 .doc-author { margin: 10px 0 0; color: var(--muted); font-size: 15px; }
 
 .reader-body { position: relative; }
+.reader:focus, .pdf-view:focus { outline: none; }
 .blocks {
   position: relative;
   z-index: 1;

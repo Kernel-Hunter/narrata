@@ -53,7 +53,7 @@ export class App {
   private typePop: Popover;
   private morePop: Popover;
   private tocPop: Popover;
-  private previewing: string | null = null;
+  private previewing: { id: string; playing: boolean } | null = null;
   private recent: DocMeta[] = [];
 
   constructor(root: HTMLElement) {
@@ -602,6 +602,10 @@ export class App {
   }
 
   private async previewVoice(id: string) {
+    if (this.previewing?.id === id && this.previewing.playing) {
+      this.player.stopPreview();
+      return;
+    }
     if (!this.tts.ready) {
       const ok = this.tts.info.state === 'needs-download' ? await this.confirmDownload() : true;
       if (!ok) return;
@@ -609,15 +613,19 @@ export class App {
       await this.tts.prepare(this.settings.model, this.settings.voice).catch(() => {});
     }
     const v = voiceById(id);
-    this.previewing = id;
+    const run = { id, playing: false };
+    this.previewing = run;
     if (this.voicePop.open) this.voicePop.render();
     try {
       await this.tts.ensureVoice(id);
-      await this.player.preview(id, `Hi, I'm ${v.name}. I can read your documents, books and articles aloud.`);
+      await this.player.preview(id, `Hi, I'm ${v.name}. I can read your documents, books and articles aloud.`, () => {
+        run.playing = true;
+        if (this.previewing === run && this.voicePop.open) this.voicePop.render();
+      });
     } catch (e) {
       toast(`Could not play ${v.name}: ${(e as Error).message}`, { error: true });
     } finally {
-      this.previewing = null;
+      if (this.previewing === run) this.previewing = null;
       if (this.voicePop.open) this.voicePop.render();
     }
   }
@@ -847,6 +855,8 @@ export class App {
     const row = (id: string) => {
       const v = voiceById(id);
       const selected = id === this.settings.voice;
+      const loading = this.previewing?.id === id && !this.previewing.playing;
+      const stopping = this.previewing?.id === id && this.previewing.playing;
       return h(
         'div',
         { class: 'voice-row' },
@@ -859,9 +869,10 @@ export class App {
         ),
         h('button', {
           class: 'icon-btn',
-          'aria-label': `Preview ${v.name}`,
-          title: `Preview ${v.name}`,
-          html: this.previewing === id ? icons.spinner : icons.play,
+          'aria-label': stopping ? `Stop preview` : `Preview ${v.name}`,
+          title: stopping ? 'Stop preview' : `Preview ${v.name}`,
+          'aria-busy': String(loading),
+          html: stopping ? icons.stop : loading ? icons.spinner : icons.play,
           onclick: () => void this.previewVoice(id),
         }),
       );
@@ -957,7 +968,9 @@ export class App {
           role: 'menuitemradio',
           'aria-checked': String(i === cur),
           onclick: () => {
-            this.tocPop.hide();
+            // Focus moves to the text (like a skip link), so Space plays from the chapter.
+            d.view.el.tabIndex = -1;
+            this.tocPop.hide(d.view.el);
             this.goToChapter(i);
           },
         }, h('span', { class: 'grow' }, c.title), h('span', { class: 'check', html: icons.check })),

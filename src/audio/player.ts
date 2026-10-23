@@ -480,7 +480,7 @@ export class Player {
 
   // ---- voice preview -------------------------------------------------------
 
-  async preview(voice: string, text: string): Promise<void> {
+  async preview(voice: string, text: string, onStart?: () => void): Promise<void> {
     const ctx = await this.ensureAudio();
     if (this.state === 'playing' || this.state === 'buffering') this.pause();
     this.previewSource?.stop();
@@ -492,6 +492,7 @@ export class Player {
     src.connect(this.volumeNode!);
     src.start();
     this.previewSource = src;
+    onStart?.();
     await new Promise<void>((resolve) => (src.onended = () => resolve()));
     if (this.previewSource === src) this.previewSource = null;
   }
