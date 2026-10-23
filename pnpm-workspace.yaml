@@ -1,0 +1,5 @@
+strictDepBuilds: false
+ignoredBuiltDependencies:
+  - onnxruntime-node
+  - protobufjs
+  - sharp
