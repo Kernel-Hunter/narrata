@@ -5,3 +5,6 @@ public/ort
 .DS_Store
 coverage
 public/pdfjs
+dist-ext
+.e2e-profile*
+narrata-e2e-*.json

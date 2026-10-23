@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Narrata",
+  "short_name": "Narrata",
+  "version": "0.0.0",
+  "description": "Reads web pages aloud with a natural voice that runs on your device, highlighting each word as it is spoken.",
+  "minimum_chrome_version": "116",
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "action": {
+    "default_title": "Narrata",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icons/16.png", "32": "icons/32.png" }
+  },
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["activeTab", "scripting", "offscreen", "storage", "contextMenus"],
+  "commands": {
+    "read-page": { "suggested_key": { "default": "Alt+Shift+R" }, "description": "Read this page" },
+    "read-selection": { "suggested_key": { "default": "Alt+Shift+S" }, "description": "Read the selected text" },
+    "toggle-reading": { "suggested_key": { "default": "Alt+Shift+P" }, "description": "Play or pause" }
+  },
+  "cross_origin_embedder_policy": { "value": "require-corp" },
+  "cross_origin_opener_policy": { "value": "same-origin" },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://*.hf.co; default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; worker-src 'self'"
+  }
+}
