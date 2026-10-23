@@ -5,7 +5,7 @@ import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import type { Span } from '../core/chunker';
 import { type DocText, type Word, tokenizeWords, wordIndexAt } from '../core/text';
 import { pdfOffsetOf, pdfRunsFor } from '../docs/pdf-text';
-import { loadPdfJs } from '../docs/pdf';
+import { loadPdfJs, pdfAssetParams } from '../docs/pdf';
 import type { PdfPageSize, PdfTextMap } from '../docs/types';
 import { h } from './dom';
 import { BoxLayer, caretAt, rangeBoxes, type Box } from './highlight';
@@ -74,7 +74,7 @@ export class PdfView implements DocView {
     this.ro.observe(this.el);
     this.ready = (async () => {
       const pdfjs = await loadPdfJs();
-      const task = pdfjs.getDocument({ data: new Uint8Array(this.source.slice(0)) });
+      const task = pdfjs.getDocument({ data: new Uint8Array(this.source.slice(0)), ...pdfAssetParams() });
       this.task = task;
       this.pdf = await task.promise;
     })();

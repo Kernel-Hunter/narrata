@@ -6,6 +6,13 @@ type PdfJs = typeof import('pdfjs-dist');
 
 let pdfjsPromise: Promise<PdfJs> | null = null;
 
+/** Where pdf.js finds fonts, character maps and decoders (served by the app, see scripts/copy-assets.mjs). */
+export function pdfAssetParams(): Record<string, unknown> {
+  if (typeof document === 'undefined') return {};
+  const base = new URL('./pdfjs/', document.baseURI).href;
+  return { standardFontDataUrl: `${base}standard_fonts/`, cMapUrl: `${base}cmaps/`, cMapPacked: true, wasmUrl: `${base}wasm/`, iccUrl: `${base}iccs/` };
+}
+
 /** pdf.js, loaded on first use with its worker served from this origin. */
 export function loadPdfJs(): Promise<PdfJs> {
   pdfjsPromise ??= (async () => {
@@ -45,7 +52,7 @@ export async function extractPdf(
   onProgress?: (done: number, total: number) => void,
 ): Promise<LoadedDoc> {
   // pdf.js transfers the buffer to its worker, so give it a copy.
-  const task = pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)) });
+  const task = pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)), ...pdfAssetParams() });
   const pdf: PDFDocumentProxy = await task.promise;
   const pages = [];
   const sizes = [];

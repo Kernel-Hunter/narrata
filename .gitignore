@@ -4,3 +4,4 @@ public/ort
 *.log
 .DS_Store
 coverage
+public/pdfjs
