@@ -38,26 +38,37 @@ export function installDebug(app: App): void {
   const player = app.player;
   const placedAudio: { p: Placed; audio: Float32Array }[] = [];
   player.onPlaced = (p, audio) => placedAudio.push({ p, audio });
-  let rec: { node: ScriptProcessorNode; parts: Float32Array[]; t0: number } | null = null;
+  let rec: { node: AudioWorkletNode; parts: Float32Array[]; t0: number } | null = null;
+  let recorderLoaded: Promise<void> | null = null;
 
   const debug = {
     placedAudio,
-    startCapture() {
+    /** Record the player output with an AudioWorklet; each block carries its exact render time. */
+    async startCapture() {
       const ctx = player.ctx!;
-      const node = ctx.createScriptProcessor(4096, 1, 1);
-      const parts: Float32Array[] = [];
-      const state = { node, parts, t0: -1 };
-      node.onaudioprocess = (e) => {
-        if (state.t0 < 0) state.t0 = e.playbackTime;
-        parts.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      recorderLoaded ??= ctx.audioWorklet.addModule(
+        URL.createObjectURL(
+          new Blob(
+            [`registerProcessor('narrata-recorder', class extends AudioWorkletProcessor {
+              process(inputs) { const ch = inputs[0] && inputs[0][0]; if (ch) this.port.postMessage({ t: currentTime, d: ch.slice() }); return true; }
+            });`],
+            { type: 'text/javascript' },
+          ),
+        ),
+      );
+      await recorderLoaded;
+      const node = new AudioWorkletNode(ctx, 'narrata-recorder', { numberOfInputs: 1, numberOfOutputs: 0 });
+      const state = { node, parts: [] as Float32Array[], t0: -1 };
+      node.port.onmessage = (e: MessageEvent<{ t: number; d: Float32Array }>) => {
+        if (state.t0 < 0) state.t0 = e.data.t;
+        state.parts.push(e.data.d);
       };
       player.outputNode!.connect(node);
-      node.connect(ctx.destination);
       rec = state;
     },
-    stopCapture(): Recording {
+    async stopCapture(): Promise<Recording> {
       if (!rec) throw new Error('not capturing');
-      rec.node.disconnect();
+      await new Promise((r) => setTimeout(r, 100));
       player.outputNode!.disconnect(rec.node);
       const n = rec.parts.reduce((s, p) => s + p.length, 0);
       const out = new Float32Array(n);
@@ -71,14 +82,16 @@ export function installDebug(app: App): void {
       return r;
     },
     /** Play the open document from the start at `rate`, record it, and analyse joints and word onsets. */
-    async measure(rate = 1, maxSeconds = 120) {
+    async measure(rate = 1, maxSeconds = 120, fresh = true) {
       const doc = app.current;
       if (!doc) throw new Error('open a document first');
       placedAudio.length = 0;
+      // Start from an empty audio cache so time to first audio includes generation.
+      if (fresh) (player as unknown as { cache: { clear(): void } }).cache.clear();
       player.wordLog = [];
       app.player.setRate(rate);
       await player.ensureAudio();
-      debug.startCapture();
+      await debug.startCapture();
       const tClick = performance.now();
       await player.playFrom(0);
       await new Promise<void>((resolve) => {
@@ -90,7 +103,7 @@ export function installDebug(app: App): void {
         }, 100);
       });
       await new Promise((r) => setTimeout(r, 400));
-      const recd = debug.stopCapture();
+      const recd = await debug.stopCapture();
       const snap = player.debugSnapshot();
       const segs = snap.segments as Segment[];
       const { env, frameSec } = envelope(recd.samples, recd.sampleRate);
@@ -136,31 +149,49 @@ export function installDebug(app: App): void {
         }
       }
       runs.sort((a, b) => b - a);
-      // Highlight check: word starts that follow punctuation begin right after a pause, so the
-      // speech onset in the recording is a ground truth for when that word starts.
+      // Highlight check. A word that follows a pause starts where the audio comes back after the
+      // silence, so that onset is ground truth for its start. Check it twice: in the 1x chunk audio
+      // (accuracy of the model timings) and in the recorded, time-stretched output (accuracy of the
+      // playback mapping at this speed).
       const words = doc.pdoc.words;
       const text = doc.loaded.doc.text;
-      const onsetErrors: { word: string; errorMs: number }[] = [];
-      for (const { p } of placedAudio) {
+      const onsetAfterPause = (e: Float32Array, i0: number, thr: number, win: number) => {
+        // Find the silent run nearest i0 (at least 6 frames = 30 ms), return the frame after it.
+        let best: number | null = null;
+        for (let j = Math.max(1, i0 - win); j < Math.min(e.length, i0 + win); j++) {
+          if (e[j] >= thr && e[j - 1] < thr) {
+            let k = j - 1;
+            while (k > 0 && e[k - 1] < thr) k--;
+            if (j - k >= 6 && (best === null || Math.abs(j - i0) < Math.abs(best - i0))) best = j;
+          }
+        }
+        return best;
+      };
+      const onsetErrors: { word: string; sourceMs: number; outputMs: number }[] = [];
+      for (const { p, audio } of placedAudio) {
+        const src = envelope(audio, recd.sampleRate);
+        let spk = 0;
+        for (const x of src.env) spk = Math.max(spk, x);
         p.starts.forEach((s, k) => {
           const w = words[p.firstWord + k];
           const before = text.slice(Math.max(0, w.start - 2), w.start);
-          if (k > 0 && !/[,.;:!?]\s$/.test(before)) return;
+          if (!/[,.;:!?]\s$/.test(before) && !(k === 0 && p.index > 0)) return;
+          const si = onsetAfterPause(src.env, Math.round(s / src.frameSec), spk * 0.02, 30);
           const t = outputAtInput(segs, p.inputStart + s);
-          if (t === null) return;
-          // Nearest onset: first loud frame after a silent stretch, within 300 ms.
-          const i0 = Math.round((t - recd.t0) / frameSec);
-          let best = Infinity;
-          for (let j = Math.max(3, i0 - 60); j < Math.min(env.length, i0 + 60); j++) {
-            if (env[j] >= thr && env[j - 1] < thr && env[j - 2] < thr && env[j - 3] < thr) {
-              const err = (j - i0) * frameSec * 1000;
-              if (Math.abs(err) < Math.abs(best)) best = err;
-            }
-          }
-          if (isFinite(best)) onsetErrors.push({ word: text.slice(w.start, w.end), errorMs: Math.round(best) });
+          if (si === null || t === null) return;
+          const oi = onsetAfterPause(env, Math.round((t - recd.t0) / frameSec), thr, 30);
+          if (oi === null) return;
+          onsetErrors.push({
+            word: text.slice(w.start, w.end),
+            sourceMs: Math.round((si * src.frameSec - s) * 1000),
+            outputMs: Math.round((recd.t0 + oi * frameSec - t) * 1000),
+          });
         });
       }
-      const abs = onsetErrors.map((e) => Math.abs(e.errorMs)).sort((a, b) => a - b);
+      const stat = (xs: number[]) => {
+        const v = xs.map(Math.abs).sort((a, b) => a - b);
+        return { median: v[Math.floor(v.length / 2)] ?? null, max: v[v.length - 1] ?? null };
+      };
       // Word log: emitted highlight vs the timing model (rAF granularity).
       const log = player.wordLog ?? [];
       const lagMs: number[] = [];
@@ -182,7 +213,7 @@ export function installDebug(app: App): void {
         joints,
         maxBufferGapSamples: Math.max(0, ...joints.map((j) => Math.abs(j.bufferGapSamples))),
         longestSilencesMs: runs.slice(0, 5).map(Math.round),
-        onsetCheck: { n: abs.length, medianMs: abs[Math.floor(abs.length / 2)] ?? null, maxMs: abs[abs.length - 1] ?? null, samples: onsetErrors.slice(0, 12) },
+        onsetCheck: { n: onsetErrors.length, sourceMs: stat(onsetErrors.map((e) => e.sourceMs)), outputMs: stat(onsetErrors.map((e) => e.outputMs)), samples: onsetErrors.slice(0, 10) },
         highlightLagMs: { n: lagMs.length, median: Math.round(lagMs[Math.floor(lagMs.length / 2)] ?? 0), max: Math.round(lagMs[lagMs.length - 1] ?? 0) },
       };
     },
