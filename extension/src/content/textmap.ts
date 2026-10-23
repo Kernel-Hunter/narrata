@@ -466,6 +466,13 @@ export class DocMapping {
     return r;
   }
 
+  /** Range of the word, or of the closest word that was found on the page (for scrolling). */
+  nearestRange(i: number): Range | null {
+    const j = this.lastMappedAtOrBefore(i);
+    const k = j >= 0 ? j : this.firstMappedAtOrAfter(i);
+    return k >= 0 ? this.rangeForWords(k, k) : null;
+  }
+
   rangeForWord(i: number): Range | null {
     if (i < 0 || i >= this.toPage.length || this.toPage[i] < 0) return null;
     return this.rangeForWords(i, i);

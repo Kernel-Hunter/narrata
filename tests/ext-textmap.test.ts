@@ -132,6 +132,10 @@ describe('reading a page', () => {
     // The title is highlighted in the page heading, not in the <title>.
     const r = x.mapping!.rangeForWord(0)!;
     expect(r.startContainer.parentElement!.tagName).toBe('H1');
+    // A word that is not on the page in reading order (the kicker) still has a place to scroll to.
+    const kicker = x.words.findIndex((w) => x.doc.text.slice(w.start, w.end) === 'Travel');
+    expect(x.mapping!.rangeForWord(kicker)).toBeNull();
+    expect(x.mapping!.nearestRange(kicker)!.toString()).toBe('Train');
     // A word deep in the article lands in the right paragraph.
     const i = x.words.findIndex((w) => x.doc.text.slice(w.start, w.end) === 'Lindqvist');
     expect(x.mapping!.rangeForWord(i)!.startContainer.parentElement!.textContent).toContain('Marta Lindqvist, who manages');

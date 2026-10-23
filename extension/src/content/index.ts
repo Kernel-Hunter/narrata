@@ -83,7 +83,7 @@ function main() {
     close: () => close(),
     backToCurrent: () => {
       follower.set(true);
-      const r = reading?.x.mapping?.rangeForWord(reading.word);
+      const r = reading?.x.mapping?.nearestRange(reading.word);
       if (r) follower.follow(r, true);
     },
     download: (model: ModelChoice) => {
@@ -188,7 +188,8 @@ function main() {
     const last = Math.max(first, lastAtOrBefore(x.words, s.end - 1, (ww) => ww.start));
     const wr = x.mapping.rangeForWord(i);
     hl.show(wr, x.mapping.rangeForWords(first, last));
-    if (wr) follower.follow(wr);
+    const near = wr ?? x.mapping.nearestRange(i);
+    if (near) follower.follow(near);
   }
 
   function onEngine(info: EngineInfo) {
