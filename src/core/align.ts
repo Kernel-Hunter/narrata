@@ -2,8 +2,10 @@
 //
 // The timestamped Kokoro export returns one duration per input token (in 25 ms frames at 24 kHz,
 // i.e. 600 samples per unit). Tokens are phoneme characters wrapped in a pad token on each side.
-// The phonemizer can merge words ("on the" -> one phoneme word) or expand them ("1987" -> three
-// words), so phoneme words are mapped to text words with a small monotonic DP alignment.
+// The G2P reports which characters of the text each phoneme came from, so every text word gets
+// the time of its own phonemes (tokenTimings). Without that mapping, phoneme words are matched
+// to text words with a small monotonic DP alignment (wordTimings), since a phonemizer can merge
+// words ("on the" -> one phoneme word) or expand them ("1987" -> three words).
 
 import { isSpoken } from './text';
 
@@ -21,7 +23,7 @@ export interface WordTiming {
   ends: number[];
   /** End of speech (seconds), before the trailing pad. */
   speechEnd: number;
-  method: 'durations' | 'durations+align' | 'proportional';
+  method: 'durations+tokens' | 'durations' | 'durations+align' | 'proportional';
 }
 
 /** Letters in a word or phoneme word, ignoring stress and length marks. */
@@ -180,6 +182,79 @@ export function wordTimings(input: TimingInput): WordTiming {
     method = 'durations+align';
   }
   return { starts, ends: endsFrom(starts, speechEnd), speechEnd, method };
+}
+
+export interface TokenTimingInput {
+  /** Spoken words of the chunk text, as offsets into it. */
+  words: { start: number; end: number }[];
+  /** G2P tokens, as offsets into the chunk text. */
+  tokens: { start: number; end: number }[];
+  /** Phoneme characters that were tokenized, in order (pads excluded). */
+  phonemes: string[];
+  /** Index into `tokens` for each phoneme character, -1 for a space between tokens. */
+  owner: number[];
+  /** One duration per model token, including both pads. */
+  durations: number[] | null;
+  samples: number;
+  sampleRate: number;
+}
+
+const SPOKEN_PHONEME = /[^\s;:,.!?¡¿—…"«»“”()]/u;
+
+/**
+ * Word timings from the phonemes of each G2P token. A text word starts with the first spoken
+ * phoneme of the tokens it overlaps; a token shared by several words ("and/or") is split between
+ * them by letter count. Returns null when a word has no phonemes (the caller falls back to the
+ * DP alignment).
+ */
+export function tokenTimings(input: TokenTimingInput): WordTiming | null {
+  const { words, tokens, phonemes, owner, samples, sampleRate } = input;
+  const d = input.durations?.map((x) => Math.max(1, Math.round(x)));
+  if (!d || d.length !== phonemes.length + 2 || owner.length !== phonemes.length || !words.length) return null;
+  const sumUnits = d.reduce((a, b) => a + b, 0);
+  if (sumUnits <= 0) return null;
+  const secPerUnit = samples / sampleRate / sumUnits;
+  const speechEnd = (sumUnits - d[d.length - 1]) * secPerUnit;
+  // Spoken span of each token, in frames.
+  const span: ({ start: number; end: number } | null)[] = tokens.map(() => null);
+  let cum = d[0];
+  phonemes.forEach((ch, k) => {
+    const t = owner[k];
+    const dk = d[k + 1];
+    if (t >= 0 && SPOKEN_PHONEME.test(ch)) {
+      const s = span[t];
+      if (!s) span[t] = { start: cum, end: cum + dk };
+      else s.end = cum + dk;
+    }
+    cum += dk;
+  });
+  const starts: number[] = [];
+  for (const w of words) {
+    let start: number | null = null;
+    for (let t = 0; t < tokens.length; t++) {
+      const tok = tokens[t];
+      const s = span[t];
+      if (!s || tok.end <= w.start || tok.start >= w.end) continue;
+      // Words sharing this token, in order: give each its share of the token's duration.
+      const sharing = words.filter((x) => x.end > tok.start && x.start < tok.end);
+      let at = s.start;
+      if (sharing.length > 1) {
+        const len = (x: { start: number; end: number }) => Math.max(1, Math.min(x.end, tok.end) - Math.max(x.start, tok.start));
+        const total = sharing.reduce((a, x) => a + len(x), 0);
+        let before = 0;
+        for (const x of sharing) {
+          if (x === w) break;
+          before += len(x);
+        }
+        at = s.start + ((s.end - s.start) * before) / total;
+      }
+      start = start === null ? at : Math.min(start, at);
+    }
+    if (start === null) return null;
+    starts.push(start * secPerUnit);
+  }
+  for (let i = 1; i < starts.length; i++) if (starts[i] < starts[i - 1]) return null;
+  return { starts, ends: endsFrom(starts, speechEnd), speechEnd, method: 'durations+tokens' };
 }
 
 function endsFrom(starts: number[], speechEnd: number): number[] {

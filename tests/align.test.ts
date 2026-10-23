@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { alignWords, phonemeWords, proportionalTimes, shiftTimings, wordTimings } from '../src/core/align';
+import { alignWords, phonemeWords, proportionalTimes, shiftTimings, tokenTimings, wordTimings } from '../src/core/align';
+import { tokenizeWords } from '../src/core/text';
 
 // Build tokens like the worker does: pad, phoneme characters, pad. Each phoneme char lasts `unit`
 // frames; spaces 1 frame.
@@ -75,5 +76,63 @@ describe('wordTimings', () => {
     const p = proportionalTimes(['a', 'bbb'], 0, 1);
     expect(p[0]).toBe(0);
     expect(p[1]).toBeCloseTo(2 / 6);
+  });
+});
+
+describe('tokenTimings', () => {
+  // "The keeper's 1987 lamp." -> G2P tokens with offsets; phoneme characters owned by tokens.
+  const text = "The keeper's 1987 lamp.";
+  const tokens = [
+    { start: 0, end: 3, ph: 'ðə' },
+    { start: 4, end: 12, ph: 'kˈipəɹz' },
+    { start: 13, end: 17, ph: 'nˌIntˈin ˈATi sˈɛvən' },
+    { start: 18, end: 22, ph: 'lˈæmp' },
+    { start: 22, end: 23, ph: '.' },
+  ];
+  function build(unit = 4) {
+    const phonemes: string[] = [];
+    const owner: number[] = [];
+    tokens.forEach((t, i) => {
+      if (i > 0 && i < 4) {
+        phonemes.push(' ');
+        owner.push(-1);
+      }
+      for (const c of t.ph) {
+        phonemes.push(c);
+        owner.push(i);
+      }
+    });
+    const durations = [6, ...phonemes.map((c) => (c === ' ' ? 1 : unit)), 10];
+    const samples = durations.reduce((a, b) => a + b, 0) * 600;
+    return { phonemes, owner, durations, samples, sampleRate: 24000 };
+  }
+
+  it('times each text word by the phonemes of its own tokens', () => {
+    const s = build();
+    const words = tokenizeWords(text);
+    const t = tokenTimings({ ...s, words, tokens });
+    expect(t?.method).toBe('durations+tokens');
+    const frame = 600 / 24000;
+    // "keeper's" starts after the pad, "ðə" (2 x 4 frames) and a space.
+    expect(t!.starts[0]).toBeCloseTo(6 * frame, 6);
+    expect(t!.starts[1]).toBeCloseTo((6 + 8 + 1) * frame, 6);
+    // "1987" is one word even though it is three phoneme words.
+    const yearStart = 6 + 8 + 1 + 7 * 4 + 1;
+    expect(t!.starts[2]).toBeCloseTo(yearStart * frame, 6);
+    expect(t!.starts).toHaveLength(4);
+    expect(t!.ends[3]).toBeCloseTo(t!.speechEnd, 6);
+  });
+
+  it('splits a token shared by several text words', () => {
+    const s = { phonemes: [...'ænd ɔɹ'], owner: [0, 0, 0, 0, 0, 0], durations: [2, 4, 4, 4, 1, 4, 4, 2], samples: 25 * 600, sampleRate: 24000 };
+    const t = tokenTimings({ ...s, words: tokenizeWords('and/or'), tokens: [{ start: 0, end: 6 }] });
+    expect(t?.starts).toHaveLength(2);
+    expect(t!.starts[1]).toBeGreaterThan(t!.starts[0]);
+  });
+
+  it('gives up when a word has no phonemes, so the caller can align instead', () => {
+    const s = build();
+    const t = tokenTimings({ ...s, words: tokenizeWords(text + ' extra'), tokens });
+    expect(t).toBeNull();
   });
 });
