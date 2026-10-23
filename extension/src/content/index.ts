@@ -408,18 +408,20 @@ function main() {
     return false;
   });
 
-  // Read-only view of the current state, for automated checks.
-  g.__narrataDebug = {
-    get reading() {
-      return reading;
-    },
-    get highlightApi() {
-      return hl.usesHighlightApi;
-    },
-    get following() {
-      return follower.following;
-    },
-    timings,
-    ui,
-  };
+  // Read-only view of the current state, for automated checks (test build only).
+  if (__NARRATA_TEST__) {
+    g.__narrataDebug = {
+      get reading() {
+        return reading;
+      },
+      get highlightApi() {
+        return hl.usesHighlightApi;
+      },
+      get following() {
+        return follower.following;
+      },
+      timings,
+      ui,
+    };
+  }
 }

@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-export const extPath = join(root, 'dist-ext');
+// The test build (pnpm build:ext:test) keeps the hooks these checks use.
+export const extPath = join(root, 'dist-ext-test');
 const pagesDir = join(root, 'tests', 'pages');
 
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png' };

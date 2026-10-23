@@ -183,7 +183,8 @@ async function handleEngine(req: EngineRequest): Promise<unknown> {
     case 'session-info':
       return { tabId: sessions.owner?.tabId ?? null, state: player?.state ?? null };
     case 'debug':
-      return debugSnapshot();
+      // State for automated checks, in the test build only.
+      return __NARRATA_TEST__ ? debugSnapshot() : null;
     case 'download': {
       const client = engine(req.model);
       if (client.info.state === 'ready') return client.info;

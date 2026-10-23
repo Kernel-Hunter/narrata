@@ -6,6 +6,7 @@ public/ort
 coverage
 public/pdfjs
 dist-ext
+dist-ext-test
 .e2e-profile*
 narrata-e2e-*.json
 __pycache__

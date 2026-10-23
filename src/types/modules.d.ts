@@ -1,3 +1,6 @@
+/** True only in the extension's test build (`pnpm build:ext:test`), which keeps the hooks for automated checks. */
+declare const __NARRATA_TEST__: boolean;
+
 declare module 'signalsmith-stretch' {
   export interface StretchSchedule {
     outputTime?: number;

@@ -9,6 +9,7 @@
     "dev": "node scripts/copy-assets.mjs && vite --port 5330 --strictPort",
     "build": "node scripts/copy-assets.mjs && tsc --noEmit && vite build",
     "build:ext": "node scripts/copy-assets.mjs && tsc --noEmit && node scripts/build-ext.mjs",
+    "build:ext:test": "node scripts/copy-assets.mjs && tsc --noEmit && node scripts/build-ext.mjs --test",
     "preview": "vite preview --port 5331 --strictPort",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

@@ -1,4 +1,6 @@
 // Builds the browser extension into dist-ext/ (load it with "Load unpacked").
+// With --test it builds into dist-ext-test/ instead and keeps the hooks used by
+// tests/e2e/verify-ext.mjs (__NARRATA_TEST__); the normal build has none of them.
 //
 // Everything the extension runs is bundled: Manifest V3 does not allow code from the network.
 // The voice model is data and is downloaded at runtime into the extension's own storage.
@@ -9,7 +11,10 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const out = join(root, 'dist-ext');
+const test = process.argv.includes('--test');
+// vite.ext.config.ts reads this too.
+process.env.NARRATA_TEST = test ? '1' : '0';
+const out = join(root, test ? 'dist-ext-test' : 'dist-ext');
 
 // 1. Popup, offscreen document (with the TTS worker) and service worker.
 await build({ configFile: join(root, 'vite.ext.config.ts'), logLevel: 'warn' });
@@ -20,6 +25,7 @@ await build({
   root,
   logLevel: 'warn',
   publicDir: false,
+  define: { __NARRATA_TEST__: JSON.stringify(test) },
   build: {
     outDir: out,
     emptyOutDir: false,
@@ -80,4 +86,4 @@ const walk = (d) => {
   }
 };
 walk(out);
-console.log(`dist-ext/ built (${(bytes / 1e6).toFixed(1)} MB). Load it from chrome://extensions with "Load unpacked".`);
+console.log(`${test ? 'dist-ext-test' : 'dist-ext'}/ built (${(bytes / 1e6).toFixed(1)} MB). Load it from chrome://extensions with "Load unpacked".`);

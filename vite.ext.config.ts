@@ -5,14 +5,17 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 
 const root = resolve(import.meta.dirname, 'extension');
+/** `pnpm build:ext:test` builds into dist-ext-test/ with the hooks for automated checks. */
+const test = process.env.NARRATA_TEST === '1';
 
 export default defineConfig({
   root,
   base: './',
   publicDir: false,
   worker: { format: 'es' },
+  define: { __NARRATA_TEST__: JSON.stringify(test) },
   build: {
-    outDir: resolve(import.meta.dirname, 'dist-ext'),
+    outDir: resolve(import.meta.dirname, test ? 'dist-ext-test' : 'dist-ext'),
     emptyOutDir: true,
     target: 'es2022',
     sourcemap: false,

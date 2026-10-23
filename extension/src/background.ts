@@ -220,12 +220,14 @@ function runCommand(command: string, tab: chrome.tabs.Tab | undefined) {
 chrome.contextMenus.onClicked.addListener((info, tab) => void clickMenu(info, tab));
 chrome.commands.onCommand.addListener((command, tab) => void runCommand(command, tab));
 
-// Hooks for automated checks: a test runner cannot click Chrome's context menu or press
-// extension shortcuts, so it calls the same handlers directly.
-(globalThis as unknown as { narrataTest: object }).narrataTest = {
-  menu: async (menuItemId: string, tabId: number, extra: { frameId?: number; selectionText?: string } = {}) => clickMenu({ menuItemId, ...extra }, await chrome.tabs.get(tabId)),
-  command: async (command: string, tabId: number) => runCommand(command, await chrome.tabs.get(tabId)),
-  ensureOffscreen,
-  offscreen: (msg: unknown) => toOffscreen(envelope('offscreen', msg)),
-  popup: (req: PopupRequest) => handlePopup(req),
-};
+// Hooks for automated checks, in the test build only: a test runner cannot click Chrome's context
+// menu or press extension shortcuts, so it calls the same handlers directly.
+if (__NARRATA_TEST__) {
+  (globalThis as unknown as { narrataTest: object }).narrataTest = {
+    menu: async (menuItemId: string, tabId: number, extra: { frameId?: number; selectionText?: string } = {}) => clickMenu({ menuItemId, ...extra }, await chrome.tabs.get(tabId)),
+    command: async (command: string, tabId: number) => runCommand(command, await chrome.tabs.get(tabId)),
+    ensureOffscreen,
+    offscreen: (msg: unknown) => toOffscreen(envelope('offscreen', msg)),
+    popup: (req: PopupRequest) => handlePopup(req),
+  };
+}
