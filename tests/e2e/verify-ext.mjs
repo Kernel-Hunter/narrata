@@ -250,7 +250,12 @@ async function firstRun(srv) {
   const vh = await page.evaluate(() => innerHeight);
   check('scroll: Back to current brings the word into view', (await iso.eval('__narrataDebug.following')) && h.word && h.word.top > 0 && h.word.bottom < vh, { top: h.word?.top, vh, h, state: await hostState(page), word: await iso.eval('__narrataDebug.reading.word'), engine: (await engineDebug(sw)).wordText });
 
-  // Click a word on the page to jump there.
+  // Click a word on the page to jump there. Scroll with the wheel first, as a person would:
+  // scrollIntoView alone does not stop following, so the page would scroll back to the
+  // spoken word before the click lands.
+  await page.mouse.move(400, 400);
+  await page.mouse.wheel(0, 300);
+  await sleep(300);
   const target = await page.evaluate(() => {
     const p = [...document.querySelectorAll('article p')].find((e) => e.textContent.startsWith('The obstacle now is not demand'));
     p.scrollIntoView({ block: 'center' });
@@ -322,7 +327,12 @@ async function firstRun(srv) {
   await page.screenshot({ path: join(shots, 'ext-selection.png') });
   await page.evaluate(() => getSelection().removeAllRanges());
 
-  // Start reading from here (context menu handler, after a right-click on the page).
+  // Start reading from here (context menu handler, after a right-click on the page). The
+  // selection is still being read, so scroll with the wheel first to stop following (see the
+  // click check above).
+  await page.mouse.move(400, 400);
+  await page.mouse.wheel(0, 300);
+  await sleep(300);
   const here = await page.evaluate(() => {
     const p = [...document.querySelectorAll('article p')].find((e) => e.textContent.startsWith('Some of what the new operators'));
     p.scrollIntoView({ block: 'center' });
