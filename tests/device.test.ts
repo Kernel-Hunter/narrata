@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MERGE_CHARS } from '../src/core/chunker';
-import { OFFER_AFTER_SEC, chunkPlan, cpuVariant, shouldOfferFastVoice, threadCount } from '../src/core/device';
+import { NATURAL_RTF, OFFER_AFTER_SEC, OFFER_RTF, REF_RTF, REF_SCORE, SCORE_EXP, chunkPlan, cpuVariant, estimateNaturalRtf, recommendVoice, shouldOfferFastVoice, threadCount, type DeviceProbe } from '../src/core/device';
 
 describe('cpuVariant', () => {
   it('picks uint8 for new installs', () => {
@@ -76,5 +76,88 @@ describe('shouldOfferFastVoice', () => {
     expect(shouldOfferFastVoice({ ...slow, piper: true })).toBe(false);
     expect(shouldOfferFastVoice({ ...slow, device: 'webgpu' })).toBe(false);
     expect(shouldOfferFastVoice({ ...slow, device: undefined })).toBe(false);
+  });
+});
+
+describe('estimateNaturalRtf', () => {
+  it('gives the reference speed for the reference score with four threads', () => {
+    expect(estimateNaturalRtf(REF_SCORE, 4)).toBeCloseTo(REF_RTF, 5);
+  });
+
+  it('drops a little faster than the score', () => {
+    const half = estimateNaturalRtf(REF_SCORE / 2, 4);
+    expect(half).toBeCloseTo(REF_RTF * 0.5 ** SCORE_EXP, 5);
+    expect(half).toBeLessThan(REF_RTF / 2);
+  });
+
+  it('stays within about 25% of the speeds measured at the emulated levels', () => {
+    // scripts/bench/device-check.mjs: benchmark score and measured natural voice speed, 4 threads.
+    for (const [score, measured] of [[755, 2.515], [356, 1.242], [309, 0.696], [156, 0.341]]) {
+      const est = estimateNaturalRtf(score, 4);
+      expect(Math.abs(est - measured) / measured).toBeLessThan(0.25);
+    }
+  });
+
+  it('is slower with fewer threads, and never uses more than four', () => {
+    const one = estimateNaturalRtf(REF_SCORE, 1);
+    const two = estimateNaturalRtf(REF_SCORE, 2);
+    expect(one).toBeLessThan(two);
+    expect(two).toBeLessThan(REF_RTF);
+    expect(estimateNaturalRtf(REF_SCORE, 12)).toBeCloseTo(REF_RTF, 5);
+  });
+});
+
+describe('recommendVoice', () => {
+  /** A probe whose benchmark gives the natural voice `rtf` with four threads. */
+  const at = (rtf: number, extra: Partial<DeviceProbe> = {}): DeviceProbe => ({
+    cores: 8,
+    memoryGB: 8,
+    webgpu: false,
+    crossOriginIsolated: true,
+    benchScore: REF_SCORE * (rtf / REF_RTF) ** (1 / SCORE_EXP),
+    ...extra,
+  });
+
+  it('suggests the natural voice on the reference computer', () => {
+    const a = recommendVoice(at(REF_RTF));
+    expect(a.pick).toBe('natural');
+    expect(a.naturalRtf).toBeCloseTo(REF_RTF, 1);
+  });
+
+  it('suggests the fast voice at the emulated slower levels, whose measured speed was 1.24x or less', () => {
+    for (const score of [356, 309, 156]) expect(recommendVoice(at(1, { benchScore: score })).pick).toBe('fast');
+    expect(recommendVoice(at(1, { benchScore: 755 })).pick).toBe('natural');
+  });
+
+  it('keeps a margin without WebGPU and uses the reading bar with it', () => {
+    expect(recommendVoice(at(NATURAL_RTF + 0.05)).pick).toBe('natural');
+    expect(recommendVoice(at(NATURAL_RTF - 0.05)).pick).toBe('fast');
+    expect(recommendVoice(at(NATURAL_RTF - 0.05, { webgpu: true })).pick).toBe('natural');
+    expect(recommendVoice(at(OFFER_RTF - 0.05, { webgpu: true })).pick).toBe('fast');
+  });
+
+  it('accounts for the threads the device would get', () => {
+    // Fast enough with four threads, not with one (no cross-origin isolation) or two cores.
+    expect(recommendVoice(at(1.6)).pick).toBe('natural');
+    expect(recommendVoice(at(1.6, { crossOriginIsolated: false })).pick).toBe('fast');
+    expect(recommendVoice(at(1.6, { cores: 2 })).pick).toBe('fast');
+  });
+
+  it('suggests the fast voice with little memory, whatever the speed', () => {
+    const a = recommendVoice(at(5, { memoryGB: 2, webgpu: true }));
+    expect(a.pick).toBe('fast');
+    expect(a.reason).toContain('2 GB');
+  });
+
+  it('falls back on the core count when the benchmark could not run', () => {
+    expect(recommendVoice(at(1, { benchScore: undefined, cores: 8 })).pick).toBe('natural');
+    expect(recommendVoice(at(1, { benchScore: undefined, cores: 4 })).pick).toBe('fast');
+    expect(recommendVoice(at(1, { benchScore: undefined, cores: 4, webgpu: true })).pick).toBe('natural');
+    expect(recommendVoice(at(1, { benchScore: undefined })).naturalRtf).toBeNull();
+  });
+
+  it('explains the pick in one sentence', () => {
+    expect(recommendVoice(at(REF_RTF)).reason).toMatch(/without pauses/);
+    expect(recommendVoice(at(0.5)).reason).toMatch(/pause often.*0\.50x/);
   });
 });
