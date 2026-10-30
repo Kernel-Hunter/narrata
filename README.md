@@ -13,7 +13,7 @@ It is a web app. After a one-time download of the voice model it works offline, 
 
 ## Using it
 
-1. Open the app and download the voice (326 MB on computers with WebGPU, 93 MB otherwise; you can also pick the smaller one). This happens once.
+1. Open the app and download the voice (326 MB on computers with WebGPU, 178 MB otherwise; you can also pick the smaller one). This happens once.
 2. Open a file with the + button, drop it anywhere on the page, or paste text with Ctrl+V (Cmd+V on a Mac).
 3. Press play. Click any word to start reading from there.
 
@@ -28,7 +28,7 @@ It is a web app. After a one-time download of the voice model it works offline, 
 Other things you can do:
 
 - Change the speed from 0.5x to 3x. The pitch stays natural.
-- Pick one of 28 English voices (American and British) and preview them.
+- Pick one of 28 English voices (American and British) and preview them. On slower computers, three lighter voices read several times faster than real time (see [Slower computers](#slower-computers)).
 - Read PDFs on the original page, with the highlight on the rendered text, or switch to a reflowed text view.
 - Jump between EPUB chapters.
 - Change the theme, font (including OpenDyslexic), text size and line spacing.
@@ -38,28 +38,51 @@ Other things you can do:
 
 ## How it works
 
-- **Voice.** [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), an open text-to-speech model (Apache-2.0), in the [ONNX export with timestamps](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX-timestamped). It runs through [transformers.js](https://github.com/huggingface/transformers.js) and ONNX Runtime Web in a Web Worker, on the GPU with WebGPU when it produces correct audio, and on the CPU with multi-threaded WebAssembly otherwise. Every generated chunk is checked (NaN samples, clipping, audio that stops early) and the app switches to the CPU if the GPU output is wrong.
+- **Voice.** [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), an open text-to-speech model (Apache-2.0), in the [ONNX export with timestamps](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX-timestamped). It runs through [ONNX Runtime Web](https://onnxruntime.ai/) in a Web Worker, on the GPU with WebGPU when it produces correct audio, and on the CPU with multi-threaded WebAssembly otherwise. The CPU path uses an 8-bit version of the model (uint8, statically quantized), which runs about twice as fast there as the dynamically quantized one. Every generated chunk is checked (NaN samples, clipping, audio that stops early) and the app switches to the CPU if the GPU output is wrong.
 - **Storage.** The model is saved in the browser's Origin Private File System, so the second visit loads it from disk in about a second. The app itself is cached by a service worker.
 - **Pronunciation.** Kokoro reads phonemes, not letters. Narrata converts English text with a TypeScript port of [misaki](https://github.com/hexgrad/misaki), the converter Kokoro was trained with: misaki's American and British dictionaries, its rules for capitals, possessives and -s, -ed and -ing endings, and its number reading. A small part-of-speech tagger picks between words spelled alike ("I read" and "I will read"), and misaki's tiny neural network guesses words that are not in the dictionaries. Narrata also reads clock times, common abbreviations, units and web addresses. The dictionaries and models (6 MB in all) are bundled and loaded on first use.
 - **Word highlighting.** The model predicts how long each phoneme lasts (25 ms units). The converter knows which word of the text each phoneme came from, so the highlight follows the voice word by word.
-- **Fast start.** Playback begins with a short first phrase (3 to 8 words), then continues sentence by sentence, generating a few sentences ahead.
+- **Fast start.** Playback begins with a short first phrase (3 to 8 words), then continues sentence by sentence, generating ahead of the voice. The player measures how fast this device generates speech and adapts: on a fast device it starts at once; on a slow one it shortens the next chunks to build a lead, or waits a few seconds ("Preparing audio") so that playback does not keep stopping.
 - **Speed without chipmunks.** Audio is generated at normal speed and played through [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/), a time-stretcher that keeps the pitch. All chunks go into one continuous buffer, so there are no gaps between sentences.
 - **Documents.** [pdf.js](https://mozilla.github.io/pdf.js/) for PDFs, [Readability](https://github.com/mozilla/readability) for web pages, and a small EPUB reader built on [fflate](https://github.com/101arrowz/fflate).
 
 ## Privacy
 
-Narrata downloads the voice model and the voices from Hugging Face the first time you use them. After that it makes no network requests of its own. Your documents, reading positions and settings are stored in your browser (IndexedDB and local storage) and never uploaded. Removing the site data in your browser deletes everything.
+Narrata downloads the voice model and the voices from Hugging Face the first time you use them (the faster voices only if you choose one). After that it makes no network requests of its own. Your documents, reading positions and settings are stored in your browser (IndexedDB and local storage) and never uploaded. Removing the site data in your browser deletes everything.
 
 ## Browser support
 
 | Browser | Status |
 | --- | --- |
 | Chrome, Edge 113+ (desktop) | Works. Uses the GPU through WebGPU. |
-| Chrome on Android | Should work on recent phones; the CPU path is slow on older devices. |
+| Chrome, Edge without WebGPU | Works on the CPU. See [Slower computers](#slower-computers). |
+| Chrome on Android | Should work on recent phones; older phones are best with a faster voice. |
 | Safari 26+, Firefox 141+ | WebGPU is new there and not yet tested with this model. If the GPU output fails the check, the CPU path is used. |
 | Older browsers | The CPU path needs WebAssembly with SIMD; multi-threading needs cross-origin isolation, which the service worker provides. |
 
-Generation speed depends on your hardware. On an Apple M5 laptop the GPU path generates about 7 seconds of speech per second and the CPU path (the smaller model, 4 threads) about 1.3 seconds per second. On the CPU path playback can pause briefly at the start and at speeds above 1x while the voice catches up.
+### Slower computers
+
+Generation speed depends on your hardware. On an Apple M5 laptop the GPU path generates about 7 seconds of speech per second and the CPU path about 2 seconds per second with 4 threads.
+
+Measured with `scripts/bench/cpu-bench.mjs` on the same laptop, with the browser slowed down by the operating system to emulate slower computers. Reading the three-paragraph sample (about a minute of speech) at 1x with the CPU path, 4 threads:
+
+| Emulated computer | Natural voice speed | Wait before audio | Pauses | Faster voice speed |
+| --- | --- | --- | --- | --- |
+| This laptop | 2.1x real time | 3.5 s | none | 29x real time |
+| 2 times slower | 1.0x | 7.6 s | none | 14x |
+| 5 times slower | 0.44x | 10 s | 5 (76 s in all) | 5.1x |
+| 6 times slower | 0.34x | 10 s | 7 (111 s in all) | 3.7x |
+| 17 times slower | 0.12x | 15 s | 7 (401 s in all) | 1.2x |
+
+Below about 1x real time the natural voice cannot keep up with playback, no matter how much audio is buffered. That is when the faster voice helps. The emulation slows every core equally, so a real computer with more, slower cores may do better than the table suggests.
+
+What happens on a slow device:
+
+- If generation is a little faster than playback, the first chunks are kept short to build a lead.
+- If it is slower than playback, the player waits until it has enough audio to play to the end of the next minute without stopping, up to 10 seconds, and shows "Preparing audio" with an estimate. Chunks are joined into longer ones, which generate faster.
+- After about 15 seconds of audio, if the natural voice cannot keep up, Narrata offers once to switch to a faster voice. You can also pick one yourself under **Faster voices** in the voice menu.
+- The faster voices are three [Piper](https://github.com/rhasspy/piper) voices (Kristin and John, American; Cori, British; 64 MB each). They sound less natural than Kokoro but generate speech many times faster than real time on the same hardware. Word highlighting, speed control and export work the same. They are downloaded only if you choose one.
+- Chrome slows down hidden tabs. While audio is playing this does not apply; when playback is waiting for audio in a hidden tab (or exporting), the player plays a tone far below hearing (20 Hz at -60 dB) so that generation keeps running at full speed.
 
 ## Browser extension
 
@@ -69,7 +92,7 @@ It is not in the Chrome Web Store yet. To try it:
 
 1. `pnpm install && pnpm build:ext`
 2. Open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and pick the `dist-ext` folder.
-3. On an article, press Alt+Shift+R or click the Narrata button and choose **Read this page**. The first time, the player offers to download the voice (326 MB with a graphics chip, or a 93 MB version that runs on the processor) and shows the size before anything is downloaded.
+3. On an article, press Alt+Shift+R or click the Narrata button and choose **Read this page**. The first time, the player offers to download the voice (326 MB with a graphics chip, or a 178 MB version that runs on the processor) and shows the size before anything is downloaded.
 
 What it does:
 
@@ -110,7 +133,7 @@ The extension makes one kind of network request: downloading the voice model and
 
 Narrata is free software under the [MIT License](LICENSE).
 
-It includes work under other permissive licences, listed in [NOTICE](NOTICE): the misaki port, dictionaries and fallback network (Apache-2.0) and spaCy's tokenizer rules (MIT). `pnpm audit:licenses` builds the app and the extension and lists the licence of every package they contain; it fails if any of them is GPL, LGPL or AGPL.
+It includes work under other permissive licences, listed in [NOTICE](NOTICE): the misaki port, dictionaries and fallback network (Apache-2.0) and spaCy's tokenizer rules (MIT). The faster voices are MIT-licensed Piper models trained on public-domain recordings; Narrata feeds them its own phonemes, so eSpeak NG (GPL) is not used. `pnpm audit:licenses` builds the app and the extension and lists the licence of every package they contain; it fails if any of them is GPL, LGPL or AGPL.
 
 ## Development
 
@@ -129,6 +152,8 @@ pnpm audit:licenses   # licences of everything the builds contain
 ```
 
 `node tests/e2e/verify-ext.mjs` loads `dist-ext-test/` (build it with `pnpm build:ext:test`) into Playwright's Chromium (`pnpm exec playwright install chromium` once), serves the pages in `tests/pages/` and checks reading, highlighting, speed, controls, selections, frames and restricted pages. The first run downloads the voice model into `.e2e-profile/`.
+
+`node scripts/bench/cpu-bench.mjs` measures the CPU path on a production build: real-time factor, time to first audio and how long playback would pause, at several emulated CPU speeds (`--levels`, see the comment at the top of the script) and for several configurations (`--configs`). Chrome's CPU throttling does not slow down Web Workers, so the script slows the browser's processes with the operating system instead (macOS). `node scripts/bench/background-check.mjs` compares generation speed in a visible and a hidden tab.
 
 The G2P data in `src/engine/g2p/data/` is generated by the scripts in `scripts/g2p/` (from misaki's dictionaries, the fallback network weights and a tagger trained on Project Gutenberg books tagged by spaCy); each script explains its inputs at the top. `tests/g2p-accuracy.test.ts` compares the G2P with misaki's own output on 1,385 words and sentences in `tests/g2p-eval/`.
 
@@ -156,7 +181,8 @@ tests/         unit tests and fixtures
 - misaki's fallback networks by [Peter Reid](https://huggingface.co/PeterReid/graphemes_to_phonemes_en_us)
 - [spaCy](https://spacy.io/) by Explosion, whose English tokenizer rules and tags Narrata's G2P reproduces
 - [Project Gutenberg](https://www.gutenberg.org/), whose public-domain books trained the part-of-speech tagger
-- [transformers.js](https://github.com/huggingface/transformers.js) and [ONNX Runtime Web](https://onnxruntime.ai/)
+- [ONNX Runtime Web](https://onnxruntime.ai/) by Microsoft
+- [Piper](https://github.com/rhasspy/piper) by Michael Hansen, and the Kristin, John and Cori voices by Bryce Beattie, trained on public-domain [LibriVox](https://librivox.org/) recordings
 - [pdf.js](https://github.com/mozilla/pdf.js) and [Readability](https://github.com/mozilla/readability) by Mozilla
 - [fflate](https://github.com/101arrowz/fflate) for reading EPUB files
 - [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/) by Geraint Luff
