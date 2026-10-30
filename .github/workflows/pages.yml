@@ -1,0 +1,52 @@
+# Builds the web app and publishes dist/ on GitHub Pages (https://<user>.github.io/narrata/).
+#
+# GitHub Pages cannot send the Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers
+# that multi-threaded WebAssembly needs. The build includes a service worker (src/pwa/sw.js, the
+# coi-serviceworker approach) that adds them to every response; on the first visit the page
+# reloads once after it takes control. The build uses relative paths (base './' in
+# vite.config.ts), so it works under /narrata/ or any other path without changes.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
+      - name: Check the service worker is in the build
+        run: test -f dist/sw.js && grep -q "Cross-Origin-Embedder-Policy" dist/sw.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

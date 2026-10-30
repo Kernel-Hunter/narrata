@@ -5,6 +5,7 @@
   "description": "Reads anything aloud with a natural voice that runs on your device.",
   "license": "MIT",
   "type": "module",
+  "packageManager": "pnpm@12.11.2",
   "scripts": {
     "dev": "node scripts/copy-assets.mjs && vite --port 5330 --strictPort",
     "build": "node scripts/copy-assets.mjs && tsc --noEmit && vite build",
