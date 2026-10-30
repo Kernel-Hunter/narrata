@@ -12,3 +12,5 @@ narrata-e2e-*.json
 __pycache__
 .bench-profile
 .bench-dist
+# A global "Icon?" rule (macOS folder icons) also matches this folder on a case-insensitive disk.
+!public/icons/
