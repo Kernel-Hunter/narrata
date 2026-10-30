@@ -29,3 +29,8 @@ declare module 'signalsmith-stretch' {
   }
   export default function SignalsmithStretch(ctx: BaseAudioContext, options?: AudioWorkletNodeOptions): Promise<StretchNode>;
 }
+
+// ONNX Runtime Web ships types that do not resolve through its package exports; the engine
+// declares the few parts it uses (src/engine/runtime.ts).
+declare module 'onnxruntime-web/wasm';
+declare module 'onnxruntime-web/webgpu';
