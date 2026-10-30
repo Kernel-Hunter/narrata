@@ -14,7 +14,9 @@ import { MODEL_FILES, ModelStore, PIPER_SOURCE, SUPPORT_FILES, VOICE_BYTES, down
 import { PiperModel, phonemeDurations, piperInput, resample, type PiperConfig } from './piper/piper';
 import { createSession, loadRuntime, type OrtModule, type Session } from './runtime';
 import { encodeM4a } from './export-m4a';
-import type { Device, EngineStatus, ExportRequest, FromWorker, GenRequest, ModelChoice, ToWorker, Tuning } from './protocol';
+import { probeDevice } from './probe';
+import type { Device, EnginePlan, EngineStatus, ExportRequest, FromWorker, GenRequest, ModelChoice, ToWorker, Tuning } from './protocol';
+import type { DeviceProbe } from '../core/device';
 import { DEFAULT_VOICE, PIPER_VOICES, isPiper, voiceById, type PiperVoice } from './voices';
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -39,6 +41,9 @@ let hasWebGPU = false;
 let threads = 1;
 let tuning: Tuning = {};
 let lastChoice: ModelChoice = 'auto';
+/** The voice the app has selected: status reports what it needs. */
+let selected = DEFAULT_VOICE;
+let probe: DeviceProbe | undefined;
 
 const post = (m: FromWorker, transfer: Transferable[] = []) => self.postMessage(m, transfer);
 
@@ -65,13 +70,57 @@ function planFor(choice: ModelChoice): { variant: Variant; device: Device } {
   return { variant: 'fp32', device: 'webgpu' };
 }
 
-function status(choice: ModelChoice): EngineStatus {
+/** Files of the natural voice: the model for this device, the tokenizer and config, one voice. */
+function kokoroFiles(variant: Variant, voiceId: string) {
+  return [MODEL_FILES[variant], ...SUPPORT_FILES, { path: voicePath(voiceId), bytes: VOICE_BYTES }];
+}
+
+function kokoroStatus(choice: ModelChoice, voiceId: string): EnginePlan {
   const plan = planFor(choice);
-  const stored = (Object.keys(MODEL_FILES) as Variant[]).filter((v) => store.has(MODEL_FILES[v].path));
-  const files = [MODEL_FILES[plan.variant], ...SUPPORT_FILES, { path: voicePath('af_heart'), bytes: VOICE_BYTES }];
-  const missingBytes = files.filter((f) => !store.has(f.path)).reduce((s, f) => s + f.bytes, 0);
-  const fastVoices = PIPER_VOICES.filter((v) => piperFiles(v).every((f) => piperStore.has(f.path))).map((v) => v.id);
-  return { hasWebGPU, stored, fastVoices, plan: { ...plan, bytes: downloadSize(plan.variant), missingBytes }, persistent: store.persistent, storedBytes: store.storedBytes() + piperStore.storedBytes() };
+  const missingBytes = kokoroFiles(plan.variant, voiceId).filter((f) => !store.has(f.path)).reduce((s, f) => s + f.bytes, 0);
+  return { engine: 'kokoro', ...plan, bytes: downloadSize(plan.variant), missingBytes };
+}
+
+function piperStatus(v: PiperVoice): EnginePlan {
+  const files = piperFiles(v);
+  const missingBytes = files.filter((f) => !piperStore.has(f.path)).reduce((s, f) => s + f.bytes, 0);
+  return { engine: 'piper', variant: 'uint8', device: 'wasm', bytes: files.reduce((s, f) => s + f.bytes, 0), missingBytes };
+}
+
+function status(choice: ModelChoice): EngineStatus {
+  const v = voiceById(selected);
+  const kokoro = kokoroStatus(choice, isPiper(v) ? DEFAULT_VOICE : v.id);
+  const stored = (Object.keys(MODEL_FILES) as Variant[]).filter((x) => store.has(MODEL_FILES[x].path));
+  const fastVoices = PIPER_VOICES.filter((p) => piperFiles(p).every((f) => piperStore.has(f.path))).map((p) => p.id);
+  return {
+    hasWebGPU,
+    stored,
+    fastVoices,
+    plan: isPiper(v) ? piperStatus(v) : kokoro,
+    kokoro,
+    persistent: store.persistent,
+    storedBytes: store.storedBytes() + piperStore.storedBytes(),
+    probe,
+  };
+}
+
+/**
+ * Nothing downloaded yet: run the device check that the first-run choice is based on, then report
+ * it. It waits a moment first: while the page is still loading, the benchmark measured a third of
+ * the speed it measures a second later (on an M5 laptop, 250 against 750), as the worker competes
+ * with the page's start-up work. The choice is shown at once and the suggestion follows.
+ */
+const PROBE_DELAY_MS = 1000;
+let probeTimer = 0;
+function probeIfFirstRun() {
+  probe = undefined;
+  clearTimeout(probeTimer);
+  if (store.storedBytes() + piperStore.storedBytes() > 0) return;
+  probeTimer = self.setTimeout(() => {
+    if (store.storedBytes() + piperStore.storedBytes() > 0 || kokoroPlan) return;
+    probe = probeDevice(hasWebGPU, true);
+    post({ type: 'status', status: status(lastChoice) });
+  }, PROBE_DELAY_MS);
 }
 
 let baseUrl = '';
@@ -95,11 +144,15 @@ function piperFiles(v: PiperVoice) {
   ];
 }
 
-/** Download (with progress) and load a Piper voice; one is kept in memory at a time. */
-async function ensurePiper(v: PiperVoice): Promise<PiperModel> {
+/**
+ * Download (with progress) and load a Piper voice; one is kept in memory at a time. Progress is
+ * reported as the main download when this is the voice being prepared, as a voice download when
+ * switching voices.
+ */
+async function ensurePiper(v: PiperVoice, main = false): Promise<PiperModel> {
   if (piper?.id === v.id) return piper.model;
   const files = piperFiles(v);
-  await piperStore.ensure(files, (p) => post({ type: 'voice-download', voice: v.id, loaded: p.loaded, total: p.total }));
+  await piperStore.ensure(files, (p) => post(main ? { type: 'download', loaded: p.loaded, total: p.total } : { type: 'voice-download', voice: v.id, loaded: p.loaded, total: p.total }));
   const [modelBlob, configBlob] = await Promise.all(files.map((f) => piperStore.read(f.path)));
   if (!modelBlob || !configBlob) throw new Error(`Voice ${v.name} is not available`);
   if (piper) await piper.model.release().catch(() => {});
@@ -113,25 +166,52 @@ async function ensurePiper(v: PiperVoice): Promise<PiperModel> {
   return piper.model;
 }
 
-/** Load the Kokoro model if a Kokoro voice is used after starting with a Piper voice. */
+/**
+ * Load the Kokoro model when a Kokoro voice is used after starting with a Piper voice. The model is
+ * downloaded first if needed (only Piper may have been downloaded), with progress reported as a
+ * download of that voice, since the Piper voice keeps reading meanwhile.
+ */
 let kokoroLoading: Promise<void> | null = null;
-function ensureKokoro(): Promise<void> {
+function ensureKokoro(voiceId: string): Promise<void> {
   if (model) return Promise.resolve();
   const plan = kokoroPlan;
   if (!plan) return Promise.reject(new Error('Model not loaded'));
-  kokoroLoading ??= loadModel(plan.variant, plan.device)
-    .then(async (loadMs) => {
-      // Measure the speed as prepare does, so playback does not start with a guess.
-      post({ type: 'loading', stage: 'Checking the voice' });
-      const t0 = performance.now();
-      const test = await synthesizeKokoro(TEST_SENTENCE, DEFAULT_VOICE);
-      const testMs = performance.now() - t0;
-      post({ type: 'ready', device, variant, engine: 'kokoro', loadMs: Math.round(loadMs), testMs: Math.round(testMs), testRtf: +(test.audio.length / SAMPLE_RATE / (testMs / 1000)).toFixed(3), threads });
-    })
-    .finally(() => {
-      kokoroLoading = null;
-    });
+  kokoroLoading ??= (async () => {
+    await store.ensure(kokoroFiles(plan.variant, voiceId), (p) => post({ type: 'voice-download', voice: voiceId, loaded: p.loaded, total: p.total }));
+    post({ type: 'status', status: status(lastChoice) });
+    vocab ??= await loadVocab();
+    await startKokoro(plan, voiceId);
+  })().finally(() => {
+    kokoroLoading = null;
+  });
   return kokoroLoading;
+}
+
+/**
+ * Load the Kokoro model on the planned device and check it on a test sentence, which also measures
+ * the speed so playback does not start from a guess. If the graphics chip fails to load the model,
+ * throws on the test or produces bad audio (the per-chunk check in synthesizeKokoro), Kokoro moves
+ * to the processor for good. Used for the first start and when switching from a Piper voice.
+ */
+async function startKokoro(plan: { variant: Variant; device: Device }, voiceId: string): Promise<void> {
+  let loadMs = 0;
+  const attempt = async (d: Device) => {
+    loadMs += await loadModel(plan.variant, d);
+    post({ type: 'loading', stage: 'Checking the voice' });
+    const t0 = performance.now();
+    const test = await synthesizeKokoro(TEST_SENTENCE, voiceId);
+    return { test, testMs: performance.now() - t0 };
+  };
+  let r: Awaited<ReturnType<typeof attempt>>;
+  try {
+    r = await attempt(plan.device);
+  } catch (e) {
+    // Rethrow if the processor was already tried (synthesizeKokoro moves there on bad audio).
+    if (plan.device !== 'webgpu' || (device === 'wasm' && model)) throw e;
+    post({ type: 'fallback', from: 'webgpu', to: 'wasm', reason: String((e as Error)?.message ?? e) });
+    r = await attempt('wasm');
+  }
+  post({ type: 'ready', device, variant, engine: 'kokoro', loadMs: Math.round(loadMs), testMs: Math.round(r.testMs), testRtf: +(r.test.audio.length / SAMPLE_RATE / (r.testMs / 1000)).toFixed(3), threads });
 }
 
 async function ensureVoice(id: string): Promise<Float32Array> {
@@ -240,7 +320,7 @@ async function synthesizePiper(text: string, v: PiperVoice): Promise<Synth> {
 async function synthesize(text: string, voiceId: string): Promise<Synth> {
   const v = voiceById(voiceId);
   if (isPiper(v)) return synthesizePiper(text, v);
-  await ensureKokoro();
+  await ensureKokoro(v.id);
   return synthesizeKokoro(text, voiceId);
 }
 
@@ -272,6 +352,7 @@ async function synthesizeKokoro(text: string, voiceId: string): Promise<Synth> {
   let attempt = await runModel(phonemes, voice);
   let timing = timingFor(attempt.durations, attempt.audio.length);
   let sane = checkAudio(attempt.audio, SAMPLE_RATE, timing.speechEnd);
+  if (device === 'webgpu' && tuning.failGpu) sane = { ...sane, ok: false, reason: 'nan' };
   if (!sane.ok && device === 'webgpu') {
     // The GPU path produced broken audio: switch to WebAssembly for good and redo this chunk.
     post({ type: 'fallback', from: 'webgpu', to: 'wasm', reason: sane.reason ?? 'bad audio' });
@@ -295,49 +376,33 @@ async function generateChunk(text: string, voiceId: string, endsWith: ChunkEnd):
 
 async function prepare(choice: ModelChoice, voiceId: string): Promise<void> {
   const plan = planFor(choice);
+  // Kept for later: with a Piper voice selected, Kokoro is downloaded and loaded only when a
+  // Kokoro voice is used.
   kokoroPlan = plan;
-  const selected = voiceById(voiceId);
-  // Kokoro is always downloaded (it is the main voice); with a Piper voice selected it is only
-  // loaded when a Kokoro voice is used.
-  const kokoroVoice = isPiper(selected) ? DEFAULT_VOICE : selected.id;
-  const files = [MODEL_FILES[plan.variant], ...SUPPORT_FILES, { path: voicePath(kokoroVoice), bytes: VOICE_BYTES }];
+  selected = voiceId;
+  const v = voiceById(voiceId);
   // The G2P data is bundled with the app: load it while the model downloads.
   const tStart = performance.now();
-  const g2pReady = g2p.prepare(voiceById(voiceId).lang).then(() => performance.now() - tStart);
+  const g2pReady = g2p.prepare(v.lang).then(() => performance.now() - tStart);
   g2pReady.catch(() => {});
-  await store.ensure(files, (p) => post({ type: 'download', loaded: p.loaded, total: p.total }));
-  const tFiles = performance.now() - tStart;
-  const g2pMs = await g2pReady;
-  vocab ??= await loadVocab();
-  if (isPiper(selected)) {
-    post({ type: 'loading', stage: 'Starting the voice' });
-    const t1 = performance.now();
-    await ensurePiper(selected);
-    const loadMs = performance.now() - t1;
+  if (isPiper(v)) {
+    await ensurePiper(v, true);
+    await g2pReady;
+    post({ type: 'loading', stage: 'Checking the voice' });
     const t0 = performance.now();
     const test = await synthesize(TEST_SENTENCE, voiceId);
     const testMs = performance.now() - t0;
-    post({ type: 'ready', device: 'wasm', variant: plan.variant, engine: 'piper', loadMs: Math.round(loadMs), testMs: Math.round(testMs), testRtf: +(test.audio.length / SAMPLE_RATE / (testMs / 1000)).toFixed(3), threads });
+    post({ type: 'ready', device: 'wasm', variant: plan.variant, engine: 'piper', loadMs: Math.round(t0 - tStart), testMs: Math.round(testMs), testRtf: +(test.audio.length / SAMPLE_RATE / (testMs / 1000)).toFixed(3), threads });
     return;
   }
+  await store.ensure(kokoroFiles(plan.variant, voiceId), (p) => post({ type: 'download', loaded: p.loaded, total: p.total }));
+  const tFiles = performance.now() - tStart;
+  const g2pMs = await g2pReady;
+  vocab ??= await loadVocab();
   await ensureVoice(voiceId);
-  let loadMs = await loadModel(plan.variant, plan.device);
-  // Self-test on one short sentence; fall back to WebAssembly if the GPU output is broken.
-  post({ type: 'loading', stage: 'Checking the voice' });
-  let t0 = performance.now();
-  let test: Synth;
-  try {
-    test = await synthesize(TEST_SENTENCE, voiceId);
-  } catch (e) {
-    if (device !== 'webgpu') throw e;
-    post({ type: 'fallback', from: 'webgpu', to: 'wasm', reason: String((e as Error).message ?? e) });
-    loadMs += await loadModel(plan.variant, 'wasm');
-    t0 = performance.now();
-    test = await synthesize(TEST_SENTENCE, voiceId);
-  }
-  const testMs = performance.now() - t0;
-  post({ type: 'ready', device, variant, engine: 'kokoro', loadMs: Math.round(loadMs), testMs: Math.round(testMs), testRtf: +(test.audio.length / SAMPLE_RATE / (testMs / 1000)).toFixed(3), threads });
-  console.info(`Narrata engine: files ${Math.round(tFiles)} ms, G2P data ${Math.round(g2pMs)} ms, model ${Math.round(loadMs)} ms, test ${Math.round(testMs)} ms`);
+  const t1 = performance.now();
+  await startKokoro(plan, voiceId);
+  console.info(`Narrata engine: files ${Math.round(tFiles)} ms, G2P data ${Math.round(g2pMs)} ms, model and test ${Math.round(performance.now() - t1)} ms`);
 }
 
 // ---- job queue ----------------------------------------------------------
@@ -442,16 +507,29 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         baseUrl = m.baseUrl;
         tuning = m.tuning ?? {};
         lastChoice = m.choice;
-        const ready = Promise.all([detectWebGPU(), store.init(), piperStore.init()]);
-        initDone = ready.then(() => {}, () => {});
-        [hasWebGPU] = await ready;
+        selected = m.voice;
+        const ready = Promise.all([detectWebGPU(), store.init(), piperStore.init()]).then(([gpu]) => {
+          hasWebGPU = gpu;
+          probeIfFirstRun();
+        });
+        initDone = ready.catch(() => {});
+        await ready;
         post({ type: 'status', status: status(m.choice) });
         break;
       }
+      case 'select':
+        lastChoice = m.choice;
+        selected = m.voice;
+        post({ type: 'status', status: status(m.choice) });
+        break;
       case 'prepare':
         lastChoice = m.choice;
-        await prepare(m.choice, m.voice);
-        post({ type: 'status', status: status(m.choice) });
+        try {
+          await prepare(m.choice, m.voice);
+        } finally {
+          // Also after a failed download, so the sizes shown are up to date.
+          post({ type: 'status', status: status(m.choice) });
+        }
         break;
       case 'generate':
         genQueue.push(m);
@@ -463,13 +541,14 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         break;
       case 'voice': {
         const v = voiceById(m.voice);
+        selected = m.voice;
         try {
-          await Promise.all([isPiper(v) ? ensurePiper(v) : ensureVoice(v.id).then(() => (model || !kokoroPlan ? undefined : ensureKokoro())), g2p.prepare(v.lang)]);
+          await Promise.all([isPiper(v) ? ensurePiper(v) : model || !kokoroPlan ? ensureVoice(v.id) : ensureKokoro(v.id).then(() => ensureVoice(v.id)), g2p.prepare(v.lang)]);
           post({ type: 'voice-ready', voice: m.voice });
         } catch (err) {
           post({ type: 'voice-error', voice: m.voice, message: String((err as Error)?.message ?? err) });
         }
-        if (isPiper(v)) post({ type: 'status', status: status(lastChoice) });
+        post({ type: 'status', status: status(lastChoice) });
         break;
       }
       case 'export':
@@ -481,6 +560,16 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         if (job) job.cancelled = true;
         break;
       }
+      case 'probe': {
+        const p = probeDevice(hasWebGPU, true);
+        post({ type: 'probe', probe: p });
+        // On the first run this replaces the check made at start (the tab may have been hidden).
+        if (store.storedBytes() + piperStore.storedBytes() === 0) {
+          probe = p;
+          post({ type: 'status', status: status(lastChoice) });
+        }
+        break;
+      }
       case 'clear':
         if (model) await model.release().catch(() => {});
         if (piper) await piper.model.release().catch(() => {});
@@ -489,9 +578,12 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         kokoroPlan = null;
         voices.clear();
         vocab = null;
+        // Both stores: without OPFS the Piper files live in memory and would survive otherwise.
+        await ModelStore.removeAll();
         await store.clear();
-        await piperStore.init();
-        post({ type: 'status', status: status('auto') });
+        await piperStore.clear();
+        probeIfFirstRun();
+        post({ type: 'status', status: status(lastChoice) });
         break;
     }
   } catch (err) {

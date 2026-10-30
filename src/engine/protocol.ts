@@ -1,4 +1,5 @@
 import type { ChunkEnd } from '../core/chunker';
+import type { DeviceProbe } from '../core/device';
 import type { Variant } from './model-store';
 import type { SessionTuning } from './runtime';
 
@@ -11,6 +12,17 @@ export interface Tuning {
   variant?: Variant;
   build?: 'wasm' | 'webgpu';
   session?: SessionTuning;
+  /** Treat every graphics chip result as bad audio, to exercise the fallback to the processor. */
+  failGpu?: boolean;
+}
+
+/** What a voice needs before it can read: the model files, and how many of them are missing. */
+export interface EnginePlan {
+  engine: 'kokoro' | 'piper';
+  variant: Variant;
+  device: Device;
+  bytes: number;
+  missingBytes: number;
 }
 
 export interface EngineStatus {
@@ -19,9 +31,14 @@ export interface EngineStatus {
   stored: Variant[];
   /** Fast (Piper) voices whose files are stored. */
   fastVoices: string[];
-  plan: { variant: Variant; device: Device; bytes: number; missingBytes: number };
+  /** What the selected voice needs. */
+  plan: EnginePlan;
+  /** What the natural (Kokoro) voices need, also while a fast voice is selected. */
+  kokoro: EnginePlan;
   persistent: boolean;
   storedBytes: number;
+  /** The device check, made on the first run (when nothing is stored yet). */
+  probe?: DeviceProbe;
 }
 
 export interface GenRequest {
@@ -44,14 +61,18 @@ export interface ExportRequest {
 }
 
 export type ToWorker =
-  | { type: 'init'; baseUrl: string; choice: ModelChoice; tuning?: Tuning }
+  | { type: 'init'; baseUrl: string; choice: ModelChoice; voice: string; tuning?: Tuning }
   | { type: 'prepare'; choice: ModelChoice; voice: string }
+  /** The selected voice changed before anything was loaded: report what it needs, download nothing. */
+  | { type: 'select'; choice: ModelChoice; voice: string }
   | GenRequest
   | { type: 'cancel'; epoch: number }
   | { type: 'voice'; voice: string }
   | ExportRequest
   | { type: 'export-cancel'; id: number }
-  | { type: 'clear' };
+  | { type: 'clear' }
+  /** Run the device check again (on the first run it replaces the one made at start). */
+  | { type: 'probe' };
 
 export interface GenResult {
   type: 'audio';
@@ -81,4 +102,5 @@ export type FromWorker =
   | { type: 'export-progress'; id: number; done: number; total: number; seconds: number }
   | { type: 'export-done'; id: number; data: ArrayBuffer; mime: string; ext: string; seconds: number }
   | { type: 'export-error'; id: number; message: string }
+  | { type: 'probe'; probe: DeviceProbe }
   | { type: 'error'; message: string };

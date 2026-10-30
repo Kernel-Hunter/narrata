@@ -1,6 +1,7 @@
 // Main-thread side of the TTS worker.
 
 import type { ChunkEnd } from '../core/chunker';
+import type { DeviceProbe } from '../core/device';
 import type { Device, EngineStatus, FromWorker, GenResult, ModelChoice, ToWorker, Tuning } from './protocol';
 import type { Variant } from './model-store';
 
@@ -43,12 +44,14 @@ export class TtsClient {
   private voiceWaiters = new Map<string, { resolve: () => void; reject: (e: Error) => void }[]>();
   info: EngineInfo = { state: 'starting' };
   private readyWaiters: { resolve: () => void; reject: (e: Error) => void }[] = [];
+  private statusWaiters: ((info: EngineInfo) => void)[] = [];
+  private probeWaiters: ((p: DeviceProbe) => void)[] = [];
 
-  constructor(choice: ModelChoice, tuning?: Tuning) {
+  constructor(choice: ModelChoice, voice: string, tuning?: Tuning) {
     this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module', name: 'narrata-tts' });
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => this.onMessage(e.data);
     this.worker.onerror = (e) => this.update({ state: 'error', error: e.message || 'The voice engine failed to start.' });
-    this.send({ type: 'init', baseUrl: new URL('./', document.baseURI).href, choice, tuning });
+    this.send({ type: 'init', baseUrl: new URL('./', document.baseURI).href, choice, voice, tuning });
   }
 
   private send(m: ToWorker, transfer: Transferable[] = []) {
@@ -71,6 +74,7 @@ export class TtsClient {
       case 'status': {
         const state: EngineState = this.info.state === 'ready' ? 'ready' : m.status.plan.missingBytes > 0 ? 'needs-download' : 'loading';
         this.update({ status: m.status, state: this.info.state === 'downloading' || this.info.state === 'loading' ? this.info.state : state });
+        this.statusWaiters.splice(0).forEach((w) => w(this.info));
         break;
       }
       case 'download':
@@ -127,6 +131,9 @@ export class TtsClient {
         x?.reject(new Error(m.message));
         break;
       }
+      case 'probe':
+        this.probeWaiters.splice(0).forEach((w) => w(m.probe));
+        break;
       case 'error':
         this.update({ state: this.info.state === 'ready' ? 'ready' : 'error', error: m.message, voiceDownload: undefined });
         this.readyWaiters.splice(0).forEach((w) => w.reject(new Error(m.message)));
@@ -142,6 +149,24 @@ export class TtsClient {
       this.update({ state: this.info.status?.plan.missingBytes ? 'downloading' : 'loading', error: undefined, download: undefined });
       this.send({ type: 'prepare', choice, voice });
     }
+    return p;
+  }
+
+  /**
+   * Change the selected voice before the engine is ready, without downloading anything: the worker
+   * reports what that voice needs (a fast voice needs only its own files). Resolves with the info
+   * once the new status has arrived.
+   */
+  select(choice: ModelChoice, voice: string): Promise<EngineInfo> {
+    const p = new Promise<EngineInfo>((resolve) => this.statusWaiters.push(resolve));
+    this.send({ type: 'select', choice, voice });
+    return p;
+  }
+
+  /** Run the device check in the worker (for measurements). */
+  probe(): Promise<DeviceProbe> {
+    const p = new Promise<DeviceProbe>((resolve) => this.probeWaiters.push(resolve));
+    this.send({ type: 'probe' });
     return p;
   }
 

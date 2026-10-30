@@ -3,6 +3,7 @@
 
 import { speechBounds } from './core/audio';
 import { chunksFrom } from './core/chunker';
+import { estimateNaturalRtf, recommendVoice } from './core/device';
 import type { Placed, Segment } from './core/timeline';
 import type { App } from './ui/app';
 
@@ -244,6 +245,12 @@ export function installDebug(app: App): void {
       const audio = chunks.reduce((s, c) => s + c.audioSec, 0);
       const compute = chunks.reduce((s, c) => s + c.computeMs, 0) / 1000;
       return { device: app.tts.info.device, variant: app.tts.info.variant, threads: app.tts.info.threads, modelLoadMs: app.tts.info.loadMs, testMs: app.tts.info.testMs, testRtf: app.tts.info.testRtf, planOptions, rtf: +(audio / compute).toFixed(3), audioSec: +audio.toFixed(2), chunks };
+    },
+    /** The first-run device check, run again in the worker (scripts/bench/device-check.mjs). */
+    async deviceCheck() {
+      const probe = await app.tts.probe();
+      const advice = recommendVoice(probe);
+      return { ...probe, estimate4: probe.benchScore ? +estimateNaturalRtf(probe.benchScore, 4).toFixed(2) : null, advice };
     },
     /** Export the open document and decode it back to check the duration. */
     async exportCheck(format: 'm4a' | 'wav' = 'm4a') {
