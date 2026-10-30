@@ -190,14 +190,30 @@ export class ModelStore {
     await this.writeManifest();
   }
 
-  /** Delete everything (used by "Remove downloaded voice data"). */
+  /**
+   * Delete this store's files (used by "Remove voice data"), from memory as well: without OPFS the
+   * files live only there.
+   */
   async clear(): Promise<void> {
     this.memory.clear();
     this.manifest = {};
     if (!this.dir) return;
-    const root = await navigator.storage.getDirectory();
-    await root.removeEntry('models', { recursive: true });
+    try {
+      const models = await (await navigator.storage.getDirectory()).getDirectoryHandle('models');
+      await models.removeEntry(this.source.dirName, { recursive: true });
+    } catch {
+      // Already gone.
+    }
     await this.init();
+  }
+
+  /** Remove every stored model directory, including those of earlier revisions. */
+  static async removeAll(): Promise<void> {
+    try {
+      await (await navigator.storage.getDirectory()).removeEntry('models', { recursive: true });
+    } catch {
+      // No OPFS, or nothing stored.
+    }
   }
 
   storedBytes(): number {
