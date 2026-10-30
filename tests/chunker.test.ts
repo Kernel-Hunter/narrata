@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_CHUNK_CHARS, RAMP_CHARS, chunksFrom, splitAtClauses, documentSentences, planChunks, splitHead, splitLong, splitSentences } from '../src/core/chunker';
+import { MAX_CHUNK_CHARS, RAMP_CHARS, chunksFrom, mergeChunks, splitAtClauses, documentSentences, planChunks, splitHead, splitLong, splitSentences } from '../src/core/chunker';
 import { buildDocText, tokenizeWords } from '../src/core/text';
 
 const texts = (t: string, spans: { start: number; end: number }[]) => spans.map((s) => t.slice(s.start, s.end));
@@ -133,5 +133,36 @@ describe('documentSentences', () => {
   it('assigns block indices', () => {
     const doc = buildDocText([{ kind: 'p', text: 'A one. A two.' }, { kind: 'p', text: 'B one.' }]);
     expect(documentSentences(doc).map((s) => s.block)).toEqual([0, 0, 1]);
+  });
+});
+
+describe('merge for slow devices', () => {
+  const doc = buildDocText([
+    { kind: 'p', text: 'One short sentence. Another short one follows it. A third keeps the paragraph going a little. And a fourth.' },
+    { kind: 'p', text: 'A new paragraph starts here. It has two sentences.' },
+  ]);
+  const chunks = planChunks(doc);
+
+  it('joins sentences of a block up to the limit and never across blocks', () => {
+    const merged = mergeChunks(chunks, 80);
+    expect(merged.length).toBeLessThan(chunks.length);
+    for (const c of merged) {
+      expect(c.end - c.start).toBeLessThanOrEqual(80);
+      expect(chunks.filter((x) => x.start >= c.start && x.end <= c.end).every((x) => x.block === c.block)).toBe(true);
+    }
+    // Same text overall, nothing lost or repeated.
+    expect(merged.map((c) => doc.text.slice(c.start, c.end)).join(' ')).toBe(chunks.map((c) => doc.text.slice(c.start, c.end)).join(' '));
+    expect(merged.at(-1)!.endsWith).toBe(chunks.at(-1)!.endsWith);
+  });
+
+  it('keeps chunks as they are when the limit is too small', () => {
+    expect(mergeChunks(chunks, 5)).toEqual(chunks);
+  });
+
+  it('leaves the head of the plan short and joins the rest', () => {
+    const plain = chunksFrom(doc.text, chunks, 0);
+    const merged = chunksFrom(doc.text, chunks, 0, { merge: 220 });
+    expect(merged[0]).toEqual(plain[0]);
+    expect(merged.length).toBeLessThan(plain.length);
   });
 });

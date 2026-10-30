@@ -258,7 +258,33 @@ export function splitAtClauses(text: string, chunk: Chunk, max: number): Chunk[]
 export const RAMP_CHARS = 90;
 const RAMP_CHUNKS = 3;
 
-export function chunksFrom(text: string, chunks: Chunk[], offset: number, opts: { ramp?: boolean } = {}): Chunk[] {
+/**
+ * Join consecutive chunks of the same block into chunks of up to `max` characters. Every chunk
+ * costs the model a fixed amount of work on top of its length, so on slow devices fewer, longer
+ * chunks generate faster. The model pauses at the punctuation inside a joined chunk by itself.
+ */
+export function mergeChunks(chunks: Chunk[], max: number): Chunk[] {
+  const out: Chunk[] = [];
+  for (const c of chunks) {
+    const last = out[out.length - 1];
+    if (last && last.block === c.block && (last.endsWith === 'sentence' || last.endsWith === 'clause') && c.end - last.start <= max) {
+      out[out.length - 1] = { ...last, end: c.end, endsWith: c.endsWith };
+    } else out.push({ ...c });
+  }
+  return out;
+}
+
+/** Characters per joined chunk on slow devices. */
+export const MERGE_CHARS = 220;
+
+export interface PlanOptions {
+  /** Short chunks after the head, to build a lead when generation is barely faster than playback. */
+  ramp?: boolean;
+  /** Join chunks up to this many characters (after the head and the ramp). */
+  merge?: number;
+}
+
+export function chunksFrom(text: string, chunks: Chunk[], offset: number, opts: PlanOptions = {}): Chunk[] {
   let i = chunks.findIndex((c) => c.end > offset);
   if (i < 0) return [];
   const first = { ...chunks[i] };
@@ -268,7 +294,8 @@ export function chunksFrom(text: string, chunks: Chunk[], offset: number, opts: 
     if (w) first.start = w.start - leadPunct(text, w.start);
   }
   const head = splitHead(text, first);
-  const rest = chunks.slice(i + 1);
+  let rest = chunks.slice(i + 1);
+  if (opts.merge) rest = mergeChunks(rest, opts.merge);
   const plan = head ? [head[0], head[1], ...rest] : [first, ...rest];
   if (!opts.ramp) return plan;
   // When generation is barely faster than real time, a long second chunk stalls playback right
