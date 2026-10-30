@@ -218,6 +218,11 @@ export class App {
     }
     this.updateVoiceCard();
     this.updateMeta();
+    // Sizes in the voice menu follow what is stored (a voice may have just finished downloading).
+    if (info.status !== this.lastStatus) {
+      this.lastStatus = info.status;
+      if (this.voicePop.open) this.voicePop.render();
+    }
     if (info.state === 'ready' && this.wantPlay) {
       this.wantPlay = false;
       void this.playNow();
@@ -233,6 +238,7 @@ export class App {
     }
   }
   private lastFallback?: string;
+  private lastStatus?: EngineInfo['status'];
 
   /** Download size of the selected voice (what is still missing), or of the model for `choice`. */
   private sizeFor(choice: 'auto' | 'compact' = this.settings.model): number {
