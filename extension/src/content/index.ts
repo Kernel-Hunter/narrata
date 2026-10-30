@@ -195,6 +195,7 @@ function main() {
   function onEngine(info: EngineInfo) {
     engineInfo = info;
     ui.showEngine(info);
+    if (info.voiceDownload) ui.setStatus(`Downloading the voice ${Math.floor((info.voiceDownload.loaded / Math.max(1, info.voiceDownload.total)) * 100)}%`);
     if (info.state === 'needs-download') setUiState('needs-download');
     else if (info.state === 'downloading') setUiState('downloading');
     else if (info.state === 'loading' || info.state === 'starting') {

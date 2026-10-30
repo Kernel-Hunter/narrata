@@ -2,6 +2,7 @@
 // or with ?debug in the URL). They record the real audio output and compare it with the timeline.
 
 import { speechBounds } from './core/audio';
+import { chunksFrom } from './core/chunker';
 import type { Placed, Segment } from './core/timeline';
 import type { App } from './ui/app';
 
@@ -216,6 +217,33 @@ export function installDebug(app: App): void {
         onsetCheck: { n: onsetErrors.length, sourceMs: stat(onsetErrors.map((e) => e.sourceMs)), outputMs: stat(onsetErrors.map((e) => e.outputMs)), samples: onsetErrors.slice(0, 10) },
         highlightLagMs: { n: lagMs.length, median: Math.round(lagMs[Math.floor(lagMs.length / 2)] ?? 0), max: Math.round(lagMs[lagMs.length - 1] ?? 0) },
       };
+    },
+    /**
+     * Generate the open document's playback plan from the start, back to back (as the worker does
+     * when generation is the bottleneck), and return when each chunk was ready. Playback with any
+     * start policy can then be simulated from this timeline (scripts/bench).
+     */
+    async genTimeline(maxChunks = 1000) {
+      const doc = app.current;
+      if (!doc) throw new Error('open a document first');
+      const text = doc.loaded.doc.text;
+      if (app.tts.info.testRtf) player.speed.setInitialRtf(app.tts.info.testRtf);
+      const planOptions = player.planOptions();
+      const plan = chunksFrom(text, doc.pdoc.chunks, 0, planOptions).slice(0, maxChunks);
+      const t0 = performance.now();
+      const chunks = await Promise.all(
+        plan.map((c) =>
+          app.tts.generate(text.slice(c.start, c.end), player.voice, c.endsWith, 1e9, 'play').then((r) => ({
+            chars: c.end - c.start,
+            readyMs: Math.round(performance.now() - t0),
+            computeMs: r.computeMs,
+            audioSec: +(r.audio.length / r.sampleRate).toFixed(3),
+          })),
+        ),
+      );
+      const audio = chunks.reduce((s, c) => s + c.audioSec, 0);
+      const compute = chunks.reduce((s, c) => s + c.computeMs, 0) / 1000;
+      return { device: app.tts.info.device, variant: app.tts.info.variant, threads: app.tts.info.threads, modelLoadMs: app.tts.info.loadMs, testMs: app.tts.info.testMs, testRtf: app.tts.info.testRtf, planOptions, rtf: +(audio / compute).toFixed(3), audioSec: +audio.toFixed(2), chunks };
     },
     /** Export the open document and decode it back to check the duration. */
     async exportCheck(format: 'm4a' | 'wav' = 'm4a') {

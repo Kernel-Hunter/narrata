@@ -1,6 +1,7 @@
 // Toolbar popup: what is happening on this page, the voice download, shortcuts and privacy.
 
 import type { EngineInfo } from '../../src/engine/client';
+import { downloadSize } from '../../src/engine/model-store';
 import { icons, logo } from '../../src/ui/icons';
 import { WEB_APP_URL } from './config';
 import { type PopupEvent, type PopupRequest, type PopupStatus, envelope, isEnvelope } from './protocol';
@@ -62,7 +63,7 @@ function renderEngine(info: EngineInfo | null) {
   }
   if (st && st.plan.missingBytes > 0 && info.state !== 'ready' && info.state !== 'loading') {
     box.innerHTML = `<p>The voice is not downloaded yet. One-time download: <strong>${mb(st.plan.missingBytes)}</strong>${st.hasWebGPU ? ' (runs on your graphics chip)' : ''}.</p>
-<div class="actions"><button class="btn" id="dl-auto">${icons.download}<span>Download ${mb(st.plan.missingBytes)}</span></button>${st.hasWebGPU ? `<button class="btn quiet" id="dl-compact">Smaller, 93 MB</button>` : ''}</div>`;
+<div class="actions"><button class="btn" id="dl-auto">${icons.download}<span>Download ${mb(st.plan.missingBytes)}</span></button>${st.hasWebGPU ? `<button class="btn quiet" id="dl-compact">Smaller, ${mb(downloadSize('uint8'))}</button>` : ''}</div>`;
     $('#dl-auto').onclick = () => download('auto');
     const c = document.getElementById('dl-compact');
     if (c) c.onclick = () => download('compact');

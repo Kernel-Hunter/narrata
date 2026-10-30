@@ -14,6 +14,8 @@ export interface Settings {
   lineHeight: number;
   model: ModelChoice;
   pdfMode: 'page' | 'text';
+  /** Whether the fast voice was suggested yet (it is suggested once, on slow devices). */
+  fastVoiceOffer: 'pending' | 'offered';
 }
 
 export const DEFAULTS: Settings = {
@@ -26,6 +28,7 @@ export const DEFAULTS: Settings = {
   lineHeight: 1.7,
   model: 'auto',
   pdfMode: 'page',
+  fastVoiceOffer: 'pending',
 };
 
 const KEY = 'narrata.settings';
@@ -42,6 +45,7 @@ export function clampSettings(s: Partial<Settings>): Settings {
     font: ['serif', 'sans', 'dyslexic'].includes(m.font) ? m.font : 'serif',
     model: m.model === 'compact' ? 'compact' : 'auto',
     pdfMode: m.pdfMode === 'text' ? 'text' : 'page',
+    fastVoiceOffer: m.fastVoiceOffer === 'offered' ? 'offered' : 'pending',
   };
 }
 
