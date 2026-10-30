@@ -10,3 +10,5 @@ dist-ext-test
 .e2e-profile*
 narrata-e2e-*.json
 __pycache__
+.bench-profile
+.bench-dist
