@@ -72,6 +72,8 @@ export interface DeviceProbe {
   webgpu: boolean;
   /** Multi-threaded WebAssembly is possible. */
   crossOriginIsolated: boolean;
+  /** WASM threads the voice would run with (the worker's own setting); from cores if missing. */
+  threads?: number;
   /** WebAssembly SIMD benchmark, millions of rounds per second on one thread (none without SIMD). */
   benchScore?: number;
   benchMs?: number;
@@ -137,15 +139,24 @@ export function recommendVoice(p: DeviceProbe): VoiceAdvice {
       reason: strong ? 'The speed test could not run, but this device looks fast enough.' : 'The speed test could not run, so the safer choice is suggested.',
     };
   }
-  const rtf = estimateNaturalRtf(p.benchScore, threadCount(p.cores, p.crossOriginIsolated));
+  const threads = probeThreads(p);
+  const rtf = estimateNaturalRtf(p.benchScore, threads);
   const bar = p.webgpu ? OFFER_RTF : NATURAL_RTF;
   const natural = rtf >= bar;
   const speed = `${rtf < 1 ? rtf.toFixed(2) : rtf.toFixed(1)}x`;
+  // Without cross-origin isolation the voice gets one thread, and the estimate is for one thread.
+  const where = !p.crossOriginIsolated && threads === 1 ? 'on one processor core, as this browser cannot run it on several here' : 'on the processor';
   return {
     pick: natural ? 'natural' : 'fast',
     naturalRtf: +rtf.toFixed(2),
     reason: natural
-      ? `A quick speed test suggests this computer can run the natural voice without pauses (about ${speed} real time on the processor${p.webgpu ? ', faster on the graphics chip' : ''}).`
-      : `A quick speed test suggests the natural voice would pause often on this computer (about ${speed} real time on the processor). The fast voice reads without pauses.`,
+      ? `A quick speed test suggests this computer can run the natural voice without pauses (about ${speed} real time ${where}${p.webgpu ? ', faster on the graphics chip' : ''}).`
+      : `A quick speed test suggests the natural voice would pause often on this computer (about ${speed} real time ${where}). The fast voice reads without pauses.`,
   };
+}
+
+/** Threads the natural voice will really get: the worker's setting, or what threadCount gives. */
+export function probeThreads(p: DeviceProbe): number {
+  if (!p.crossOriginIsolated) return 1;
+  return p.threads ?? threadCount(p.cores, true);
 }

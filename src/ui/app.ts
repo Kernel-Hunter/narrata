@@ -2,6 +2,7 @@ import { Player, type PlaybackDoc, type PlayerState } from '../audio/player';
 import { MERGE_CHARS, type PlanOptions, documentSentences, planChunks } from '../core/chunker';
 import { estimateSeconds, formatBytes, formatDate, formatRate, formatRemaining } from '../core/format';
 import { recommendVoice, shouldOfferFastVoice, type VoiceKind } from '../core/device';
+import { isolationState } from '../pwa/register';
 import { lastAtOrBefore, tokenizeWords, wordIndexAt } from '../core/text';
 import { ACCEPT, loadFile, loadPastedText } from '../docs';
 import type { LoadedDoc } from '../docs/types';
@@ -302,7 +303,10 @@ export class App {
    */
   private voiceChoice(onPick: (kind: VoiceKind, choice?: 'auto' | 'compact') => void): HTMLElement {
     const s = this.tts.info.status!;
-    const advice = s.probe ? recommendVoice(s.probe) : null;
+    // While isolation is still on its way (pwa/register.ts), the voice would get more threads
+    // after the reload than the speed test sees now: no suggestion until then.
+    const pending = isolationState() === 'pending' && !self.crossOriginIsolated;
+    const advice = s.probe && !pending ? recommendVoice(s.probe) : null;
     const natural = s.kokoro.missingBytes || s.kokoro.bytes;
     const fast = fastVoiceFor(voiceById(this.settings.voice));
     const fastSize = fast.bytes + fast.configBytes;
@@ -323,7 +327,7 @@ export class App {
         option('natural', 'Natural voice', natural, 'Best quality. 28 voices. Needs a fairly recent computer.'),
         option('fast', 'Fast voice', fastSize, 'Works on any computer. Sounds less natural. 3 voices.'),
       ),
-      h('p', { class: 'choice-reason', id: 'choice-reason' }, advice ? advice.reason : 'Checking how fast this computer is.', ' You can switch voices later in the voice menu.'),
+      h('p', { class: 'choice-reason', id: 'choice-reason' }, advice ? advice.reason : pending ? 'Narrata is still setting up; the speed test runs after it reloads.' : 'Checking how fast this computer is.', ' You can switch voices later in the voice menu.'),
       s.hasWebGPU && this.settings.model === 'auto'
         ? h('button', { class: 'btn btn-quiet choice-compact', onclick: () => onPick('natural', 'compact') }, `Natural voice, smaller download (${formatBytes(downloadSize('uint8'))}), runs on the processor`)
         : null,

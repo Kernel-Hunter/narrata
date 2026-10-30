@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MERGE_CHARS } from '../src/core/chunker';
-import { NATURAL_RTF, OFFER_AFTER_SEC, OFFER_RTF, REF_RTF, REF_SCORE, SCORE_EXP, chunkPlan, cpuVariant, estimateNaturalRtf, recommendVoice, shouldOfferFastVoice, threadCount, type DeviceProbe } from '../src/core/device';
+import { NATURAL_RTF, OFFER_AFTER_SEC, OFFER_RTF, REF_RTF, REF_SCORE, SCORE_EXP, chunkPlan, cpuVariant, estimateNaturalRtf, probeThreads, recommendVoice, shouldOfferFastVoice, threadCount, type DeviceProbe } from '../src/core/device';
 
 describe('cpuVariant', () => {
   it('picks uint8 for new installs', () => {
@@ -141,6 +141,33 @@ describe('recommendVoice', () => {
     expect(recommendVoice(at(1.6)).pick).toBe('natural');
     expect(recommendVoice(at(1.6, { crossOriginIsolated: false })).pick).toBe('fast');
     expect(recommendVoice(at(1.6, { cores: 2 })).pick).toBe('fast');
+  });
+
+  it('estimates with the threads the worker will really use', () => {
+    // The worker's own thread count wins over the core count (for example ?threads=2).
+    expect(probeThreads(at(1, { threads: 2 }))).toBe(2);
+    expect(probeThreads(at(1))).toBe(4);
+    expect(probeThreads(at(1, { cores: 4 }))).toBe(3);
+    const two = recommendVoice(at(REF_RTF, { threads: 2 }));
+    expect(two.naturalRtf).toBeCloseTo(estimateNaturalRtf(REF_SCORE, 2), 1);
+    expect(recommendVoice(at(1.6, { threads: 2 })).pick).toBe('fast');
+  });
+
+  it('uses one thread without cross-origin isolation, whatever the worker or the cores say', () => {
+    const p = at(REF_RTF, { crossOriginIsolated: false, threads: 4, cores: 10 });
+    expect(probeThreads(p)).toBe(1);
+    const a = recommendVoice(p);
+    expect(a.naturalRtf).toBeCloseTo(estimateNaturalRtf(REF_SCORE, 1), 1);
+    // About 0.88x on the reference computer: too slow on one core, so the fast voice.
+    expect(a.pick).toBe('fast');
+  });
+
+  it('says when the estimate is for one core because the browser cannot isolate the page', () => {
+    expect(recommendVoice(at(REF_RTF, { crossOriginIsolated: false })).reason).toMatch(/one processor core/);
+    expect(recommendVoice(at(8, { crossOriginIsolated: false })).reason).toMatch(/without pauses.*one processor core/);
+    expect(recommendVoice(at(REF_RTF)).reason).not.toMatch(/one processor core/);
+    // One thread chosen on an isolated page (a single-core device) is not the browser's doing.
+    expect(recommendVoice(at(REF_RTF, { threads: 1 })).reason).not.toMatch(/one processor core/);
   });
 
   it('suggests the fast voice with little memory, whatever the speed', () => {

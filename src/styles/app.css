@@ -889,3 +889,17 @@ kbd {
   .hl-word { background: Highlight; forced-color-adjust: none; }
   .hl-sentence { outline: 1px solid CanvasText; }
 }
+
+/* Shown while the service worker installs on a first visit (pwa/register.ts). */
+.boot-wait {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  gap: 4px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+.boot-wait p { margin: 0; }
+.boot-wait-title { color: var(--ink); font-size: 17px; font-weight: 650; }

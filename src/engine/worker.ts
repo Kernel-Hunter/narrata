@@ -118,7 +118,7 @@ function probeIfFirstRun() {
   if (store.storedBytes() + piperStore.storedBytes() > 0) return;
   probeTimer = self.setTimeout(() => {
     if (store.storedBytes() + piperStore.storedBytes() > 0 || kokoroPlan) return;
-    probe = probeDevice(hasWebGPU, true);
+    probe = probeDevice(hasWebGPU, true, threadCount());
     post({ type: 'status', status: status(lastChoice) });
   }, PROBE_DELAY_MS);
 }
@@ -561,7 +561,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         break;
       }
       case 'probe': {
-        const p = probeDevice(hasWebGPU, true);
+        const p = probeDevice(hasWebGPU, true, threadCount());
         post({ type: 'probe', probe: p });
         // On the first run this replaces the check made at start (the tab may have been hidden).
         if (store.storedBytes() + piperStore.storedBytes() === 0) {

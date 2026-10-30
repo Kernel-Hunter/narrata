@@ -95,8 +95,11 @@ export function runBench(measureMs = 120, maxWarmupMs = 150): BenchResult | null
   return { score: +(rounds / elapsed / 1000).toFixed(1), ms: Math.round(performance.now() - t0) };
 }
 
-/** Everything recommendVoice needs; the benchmark only runs when `bench` is true. */
-export function probeDevice(webgpu: boolean, bench: boolean): DeviceProbe {
+/**
+ * Everything recommendVoice needs; the benchmark only runs when `bench` is true. `threads` is the
+ * number of WASM threads the voice would run with here.
+ */
+export function probeDevice(webgpu: boolean, bench: boolean, threads?: number): DeviceProbe {
   const nav = navigator as Navigator & { deviceMemory?: number };
   const r = bench ? runBench() : null;
   return {
@@ -104,6 +107,7 @@ export function probeDevice(webgpu: boolean, bench: boolean): DeviceProbe {
     memoryGB: typeof nav.deviceMemory === 'number' ? nav.deviceMemory : undefined,
     webgpu,
     crossOriginIsolated: !!self.crossOriginIsolated,
+    threads,
     benchScore: r?.score,
     benchMs: r?.ms,
   };

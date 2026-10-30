@@ -1,14 +1,17 @@
 import './styles/app.css';
-import { registerServiceWorker } from './pwa/register';
+import { onIsolationReady, registerServiceWorker, reloadForIsolation } from './pwa/register';
 import { App } from './ui/app';
+import { toast } from './ui/overlay';
 
 const root = document.getElementById('app')!;
 
 async function boot() {
   // In production the service worker adds the cross-origin isolation headers (needed for
   // multi-threaded WebAssembly) and caches the app for offline use. It may reload the page once.
-  if (import.meta.env.PROD && !(await registerServiceWorker())) return;
+  if (import.meta.env.PROD && !(await registerServiceWorker(root))) return;
   const app = new App(root);
+  // The first install took very long and the app started single-threaded: offer the reload.
+  onIsolationReady(() => toast('Narrata is ready to use all processor cores.', { action: 'Reload', onAction: reloadForIsolation, ms: 60_000 }));
   // Files opened with the installed app ("Open with Narrata").
   const lq = (window as unknown as { launchQueue?: { setConsumer(cb: (p: { files: FileSystemFileHandle[] }) => void): void } }).launchQueue;
   lq?.setConsumer(async (params) => {

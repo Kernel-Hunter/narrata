@@ -8,7 +8,36 @@ const isolationHeaders = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 };
 
-/** Writes dist/sw.js with the list of every built file, so the app works offline. */
+/**
+ * Files the page needs to start: index.html, what it links to (entry script, stylesheet, icons,
+ * manifest), the modules those import statically, and the TTS worker script. Everything else is
+ * cached when first used or warmed in the background after the service worker is active.
+ */
+function shellFiles(outDir: string, all: Set<string>): string[] {
+  const shell = new Set<string>(['index.html', 'manifest.webmanifest']);
+  for (const f of all) if (f.startsWith('icons/')) shell.add(f);
+  const html = readFileSync(join(outDir, 'index.html'), 'utf8');
+  const queue = [...html.matchAll(/(?:src|href)="\.\/([^"?#]+)"/g)].map((m) => m[1]);
+  while (queue.length) {
+    const f = queue.shift()!;
+    if (!all.has(f) || shell.has(f)) continue;
+    shell.add(f);
+    if (!f.endsWith('.js') && !f.endsWith('.mjs')) continue;
+    const code = readFileSync(join(outDir, f), 'utf8');
+    const dir = f.includes('/') ? f.slice(0, f.lastIndexOf('/') + 1) : '';
+    // Static imports (not import(...)), and the worker script the entry starts with new Worker().
+    for (const m of code.matchAll(/(?:\bimport|\bfrom)\s*["'`]\.\/([^"'`]+)["'`]/g)) queue.push(dir + m[1]);
+    for (const m of code.matchAll(/["'`](?:\.\/)?(worker-[\w-]+\.js)["'`]/g)) queue.push(dir + m[1]);
+  }
+  return [...shell].filter((f) => all.has(f));
+}
+
+/**
+ * Writes dist/sw.js with two lists: SHELL, cached while the worker installs (small, so the page
+ * becomes cross-origin isolated within seconds even on a slow link), and PRECACHE, every other
+ * built file with a short content hash, cached in the background once the worker runs so the
+ * app works offline after the first visit.
+ */
 function serviceWorker(): Plugin {
   let outDir = 'dist';
   return {
@@ -33,12 +62,21 @@ function serviceWorker(): Plugin {
       walk(outDir);
       const list = files.filter((f) => f !== 'sw.js' && !f.endsWith('.map')).sort();
       const template = readFileSync('src/pwa/sw.js', 'utf8');
-      const hash = createHash('sha256').update(template);
-      for (const f of list) hash.update(f).update(readFileSync(join(outDir, f)));
-      const precache = ['./', ...list.filter((f) => f !== 'index.html').map((f) => `./${f}`), './index.html'];
+      const version = createHash('sha256').update(template);
+      const revs: Record<string, string> = {};
+      for (const f of list) {
+        const data = readFileSync(join(outDir, f));
+        version.update(f).update(data);
+        revs[`./${f}`] = createHash('sha256').update(data).digest('hex').slice(0, 10);
+      }
+      revs['./'] = revs['./index.html'];
+      const shell = ['./', ...shellFiles(outDir, new Set(list)).map((f) => `./${f}`)];
+      const rest = Object.keys(revs).filter((f) => !shell.includes(f));
       const src = template
-        .replaceAll('__VERSION__', hash.digest('hex').slice(0, 12))
-        .replaceAll('__PRECACHE__', JSON.stringify(precache));
+        .replaceAll('__VERSION__', version.digest('hex').slice(0, 12))
+        .replaceAll('__SHELL__', JSON.stringify(shell))
+        .replaceAll('__PRECACHE__', JSON.stringify(rest))
+        .replaceAll('__REVS__', JSON.stringify(revs));
       writeFileSync(join(outDir, 'sw.js'), src);
     },
   };
