@@ -56,7 +56,7 @@ export type TabRequest =
   | { type: 'seek'; session: number; offset: number }
   | { type: 'rate'; session: number; rate: number }
   | { type: 'voice'; session: number; voice: string }
-  | { type: 'download'; session: number; model: ModelChoice }
+  | { type: 'download'; session: number; model: ModelChoice; voice?: string }
   | { type: 'close'; session: number };
 
 /** Offscreen document -> content script (through the service worker). */
@@ -91,7 +91,7 @@ export interface TabStatus {
 export type PopupRequest =
   | { type: 'status'; tabId: number }
   | { type: 'command'; tabId: number; command: 'read-page' | 'read-selection' | 'toggle' | 'stop' }
-  | { type: 'download'; model: ModelChoice }
+  | { type: 'download'; model: ModelChoice; voice?: string }
   | { type: 'prefs'; prefs: Partial<ReadingPrefs> };
 
 export interface PopupStatus {
@@ -103,7 +103,7 @@ export interface PopupStatus {
 }
 
 /** Offscreen document -> service worker / popup. */
-export type EngineRequest = { type: 'engine-info' } | { type: 'session-info' } | { type: 'download'; model: ModelChoice } | { type: 'debug' };
+export type EngineRequest = { type: 'engine-info'; voice?: string; model?: ModelChoice } | { type: 'session-info' } | { type: 'download'; model: ModelChoice; voice?: string } | { type: 'debug' };
 
 /** Offscreen document -> popup broadcast. */
 export type PopupEvent = { type: 'engine'; info: EngineInfo } | { type: 'session'; tabId: number | null; state: PlayerState | null };

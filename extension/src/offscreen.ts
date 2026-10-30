@@ -42,10 +42,10 @@ function toPopup(event: PopupEvent) {
   send(envelope('popup', event));
 }
 
-function engine(choice: ModelChoice): TtsClient {
+function engine(choice: ModelChoice, voice: string = DEFAULT_VOICE): TtsClient {
   if (tts) return tts;
   model = choice;
-  tts = new TtsClient(choice);
+  tts = new TtsClient(choice, voice);
   // Download progress arrives for every network chunk; pass on state changes at once and
   // progress at most five times a second.
   let lastState = '';
@@ -113,15 +113,16 @@ async function prepareAndPlay(choice: ModelChoice): Promise<void> {
 async function open(tabId: number, req: Extract<TabRequest, { type: 'open' }>): Promise<{ ok: boolean; needsDownload?: boolean; info?: EngineInfo }> {
   const prev = sessions.claim(tabId, req.session);
   if (prev) send(envelope('tab', { type: 'ended', session: prev.session, reason: 'other-tab' } satisfies TabEvent, prev.tabId));
-  const client = engine(req.prefs.model);
+  const client = engine(req.prefs.model, req.prefs.voice);
   const p = player!;
   p.stop();
   p.rate = req.prefs.rate;
-  p.voice = req.prefs.voice;
+  p.setVoice(req.prefs.voice);
   p.load(playbackDoc({ text: req.doc.text, blocks: req.doc.blocks, chapters: [] }));
   toPopup({ type: 'session', tabId, state: 'loading' });
   pending = { offset: req.offset, play: req.play };
-  const info = client.info.state === 'ready' ? client.info : await statusKnown(client);
+  // Ask what the saved voice needs: a fast voice needs only its own files.
+  const info = client.info.state === 'ready' || preparing ? client.info : await client.select(req.prefs.model, req.prefs.voice);
   if (info.state !== 'ready' && (info.status?.plan.missingBytes ?? 0) > 0 && !preparing) {
     // Ask first: the tab shows the size and a download button.
     toTab({ type: 'engine', info });
@@ -162,6 +163,7 @@ async function handleTab(tabId: number, req: TabRequest): Promise<unknown> {
       break;
     case 'download':
       model = req.model;
+      if (req.voice) p.setVoice(req.voice);
       void prepareAndPlay(req.model);
       break;
     case 'close':
@@ -177,8 +179,13 @@ async function handleTab(tabId: number, req: TabRequest): Promise<unknown> {
 async function handleEngine(req: EngineRequest): Promise<unknown> {
   switch (req.type) {
     case 'engine-info': {
-      const client = engine(model);
-      return client.info.status || client.info.state === 'ready' ? client.info : await statusKnown(client);
+      const client = engine(req.model ?? model, req.voice);
+      if (client.info.state === 'ready' || preparing) return client.info;
+      if (req.voice && req.voice !== player?.voice) {
+        player?.setVoice(req.voice);
+        return client.select(req.model ?? model, req.voice);
+      }
+      return client.info.status ? client.info : await statusKnown(client);
     }
     case 'session-info':
       return { tabId: sessions.owner?.tabId ?? null, state: player?.state ?? null };
@@ -186,7 +193,8 @@ async function handleEngine(req: EngineRequest): Promise<unknown> {
       // State for automated checks, in the test build only.
       return __NARRATA_TEST__ ? debugSnapshot() : null;
     case 'download': {
-      const client = engine(req.model);
+      const client = engine(req.model, req.voice);
+      if (req.voice) player?.setVoice(req.voice);
       if (client.info.state === 'ready') return client.info;
       model = req.model;
       if (!preparing) {

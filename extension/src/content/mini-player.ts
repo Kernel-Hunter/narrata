@@ -6,6 +6,7 @@ import type { EngineInfo } from '../../../src/engine/client';
 import type { ModelChoice } from '../../../src/engine/protocol';
 import { downloadSize } from '../../../src/engine/model-store';
 import { PIPER_VOICES, VOICES, accentLabel } from '../../../src/engine/voices';
+import { choiceHtml, isFirstRun } from '../choice';
 import { icons, logo } from '../../../src/ui/icons';
 
 export interface MiniPlayerActions {
@@ -15,7 +16,8 @@ export interface MiniPlayerActions {
   voice(voice: string): void;
   close(): void;
   backToCurrent(): void;
-  download(model: ModelChoice): void;
+  /** Download the model; with a voice, select that voice first (first-run choice). */
+  download(model: ModelChoice, voice?: string): void;
 }
 
 export type UiState = PlayerState | 'needs-download' | 'downloading' | 'preparing';
@@ -144,7 +146,7 @@ export class MiniPlayer {
   </div>
   <div class="panel voice-panel" hidden>
     <label class="lbl" for="voice">Voice</label>
-    <select id="voice"><optgroup label="${accentLabel(VOICES[0])}">${voices('a')}</optgroup><optgroup label="British">${voices('b')}</optgroup><optgroup label="Faster voices, for slower computers">${fastVoices}</optgroup></select>
+    <select id="voice"><optgroup label="${accentLabel(VOICES[0])}">${voices('a')}</optgroup><optgroup label="British">${voices('b')}</optgroup><optgroup label="Fast voices, for slower computers">${fastVoices}</optgroup></select>
   </div>
   <div class="panel dl" hidden></div>
   <div class="msg" hidden></div>
@@ -292,10 +294,15 @@ export class MiniPlayer {
       return;
     }
     dl.hidden = false;
+    if (info.state === 'needs-download' && isFirstRun(info.status)) {
+      dl.innerHTML = choiceHtml(info.status!, this.$<HTMLSelectElement>('select').value);
+      dl.querySelectorAll<HTMLButtonElement>('[data-voice]').forEach((b) => b.addEventListener('click', () => this.actions.download(b.dataset.model as ModelChoice, b.dataset.voice)));
+      return;
+    }
     if (info.state === 'needs-download') {
       const plan = info.status?.plan;
       const full = plan?.missingBytes ?? 0;
-      const gpu = info.status?.hasWebGPU;
+      const gpu = info.status?.hasWebGPU && plan?.engine === 'kokoro';
       dl.innerHTML = `<p>Narrata reads with a voice that runs on this computer. It needs a one-time download of <strong>${mb(full)}</strong> from Hugging Face.</p>
 <p class="small">${gpu ? 'The full voice uses your graphics chip. The smaller one runs on the processor and is slower.' : 'Your browser has no WebGPU, so the voice runs on the processor.'} Nothing you read is sent anywhere.</p>
 <div class="actions"><button class="btn" data-model="auto">Download ${mb(full)}</button>${gpu ? `<button class="btn quiet" data-model="compact">Smaller voice, ${mb(downloadSize('uint8'))}</button>` : ''}</div>`;

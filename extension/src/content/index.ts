@@ -47,6 +47,10 @@ function main() {
     prefs = { ...prefs, ...((r.prefs ?? {}) as Partial<ReadingPrefs>) };
   });
   const savePrefs = () => void chrome.storage.local.set({ prefs });
+  // The popup can change the voice too (first-run choice).
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.prefs?.newValue) prefs = { ...prefs, ...(changes.prefs.newValue as Partial<ReadingPrefs>) };
+  });
 
   const exclude = (el: Element) => el.hasAttribute('data-narrata-host');
 
@@ -86,10 +90,14 @@ function main() {
       const r = reading?.x.mapping?.nearestRange(reading.word);
       if (r) follower.follow(r, true);
     },
-    download: (model: ModelChoice) => {
+    download: (model: ModelChoice, voice?: string) => {
       prefs.model = model;
+      if (voice) {
+        prefs.voice = voice;
+        ui.setVoice(voice);
+      }
       savePrefs();
-      if (reading) void send({ type: 'download', session: reading.session, model });
+      if (reading) void send({ type: 'download', session: reading.session, model, voice });
       ui.setState('downloading');
     },
   });

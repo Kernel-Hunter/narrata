@@ -132,7 +132,9 @@ async function popupStatus(tabId: number): Promise<PopupStatus> {
   let engine = null;
   let readingTab: number | null = null;
   try {
-    engine = (await toOffscreen(envelope('offscreen', { type: 'engine-info' }))) as PopupStatus['engine'];
+    // The engine reports what the saved voice needs (only the offscreen document's worker knows).
+    const prefs = ((await chrome.storage.local.get('prefs')).prefs ?? {}) as { voice?: string; model?: 'auto' | 'compact' };
+    engine = (await toOffscreen(envelope('offscreen', { type: 'engine-info', voice: prefs.voice, model: prefs.model }))) as PopupStatus['engine'];
     const s = (await toOffscreen(envelope('offscreen', { type: 'session-info' }))) as { tabId: number | null };
     readingTab = s.tabId;
   } catch {
@@ -157,7 +159,7 @@ async function handlePopup(req: PopupRequest): Promise<unknown> {
       return { ok: !error, error };
     }
     case 'download':
-      return toOffscreen(envelope('offscreen', { type: 'download', model: req.model }));
+      return toOffscreen(envelope('offscreen', { type: 'download', model: req.model, voice: req.voice }));
     case 'prefs': {
       const cur = ((await chrome.storage.local.get('prefs')).prefs ?? {}) as object;
       await chrome.storage.local.set({ prefs: { ...cur, ...req.prefs } });

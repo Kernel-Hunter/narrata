@@ -3,6 +3,7 @@
 import type { EngineInfo } from '../../src/engine/client';
 import { downloadSize } from '../../src/engine/model-store';
 import { icons, logo } from '../../src/ui/icons';
+import { choiceHtml, isFirstRun } from './choice';
 import { WEB_APP_URL } from './config';
 import { type PopupEvent, type PopupRequest, type PopupStatus, envelope, isEnvelope } from './protocol';
 
@@ -43,7 +44,7 @@ function renderPage(s: PopupStatus) {
   $('#read-selection').onclick = () => command('read-selection');
 }
 
-function renderEngine(info: EngineInfo | null) {
+async function renderEngine(info: EngineInfo | null) {
   const box = $('#engine');
   if (!info) {
     box.innerHTML = `<p class="muted">Checking the voice…</p>`;
@@ -61,9 +62,15 @@ function renderEngine(info: EngineInfo | null) {
     box.querySelector('.error')!.textContent = info.error ?? 'The voice engine stopped.';
     return;
   }
+  if (st && isFirstRun(st) && info.state === 'needs-download') {
+    const prefs = ((await chrome.storage.local.get('prefs')).prefs ?? {}) as { voice?: string };
+    box.innerHTML = choiceHtml(st, prefs.voice ?? 'af_heart');
+    box.querySelectorAll<HTMLButtonElement>('[data-voice]').forEach((b) => (b.onclick = () => download('auto', b.dataset.voice)));
+    return;
+  }
   if (st && st.plan.missingBytes > 0 && info.state !== 'ready' && info.state !== 'loading') {
     box.innerHTML = `<p>The voice is not downloaded yet. One-time download: <strong>${mb(st.plan.missingBytes)}</strong>${st.hasWebGPU ? ' (runs on your graphics chip)' : ''}.</p>
-<div class="actions"><button class="btn" id="dl-auto">${icons.download}<span>Download ${mb(st.plan.missingBytes)}</span></button>${st.hasWebGPU ? `<button class="btn quiet" id="dl-compact">Smaller, ${mb(downloadSize('uint8'))}</button>` : ''}</div>`;
+<div class="actions"><button class="btn" id="dl-auto">${icons.download}<span>Download ${mb(st.plan.missingBytes)}</span></button>${st.hasWebGPU && st.plan.engine === 'kokoro' ? `<button class="btn quiet" id="dl-compact">Smaller, ${mb(downloadSize('uint8'))}</button>` : ''}</div>`;
     $('#dl-auto').onclick = () => download('auto');
     const c = document.getElementById('dl-compact');
     if (c) c.onclick = () => download('compact');
@@ -75,10 +82,10 @@ function renderEngine(info: EngineInfo | null) {
   box.innerHTML = `<p class="ok">${icons.check}<span>${label} on this computer${size ? ` · ${size}` : ''} · ${where}</span></p>`;
 }
 
-async function download(model: 'auto' | 'compact') {
-  await ask({ type: 'prefs', prefs: { model } });
-  const info = await ask<EngineInfo>({ type: 'download', model });
-  renderEngine(info);
+async function download(model: 'auto' | 'compact', voice?: string) {
+  await ask({ type: 'prefs', prefs: voice ? { model, voice } : { model } });
+  const info = await ask<EngineInfo>({ type: 'download', model, voice });
+  void renderEngine(info);
 }
 
 async function command(c: 'read-page' | 'read-selection' | 'toggle' | 'stop') {
@@ -96,7 +103,7 @@ async function refresh() {
   if (!s) return;
   last = s;
   renderPage(s);
-  renderEngine(s.engine);
+  void renderEngine(s.engine);
 }
 
 async function shortcuts() {
@@ -112,7 +119,7 @@ chrome.runtime.onMessage.addListener((raw: unknown) => {
   if (!isEnvelope(raw) || raw.to !== 'popup') return false;
   const ev = raw.msg as PopupEvent;
   if (ev.type === 'engine') {
-    renderEngine(ev.info);
+    void renderEngine(ev.info);
     if (ev.info.state === 'ready' && last?.engine?.state !== 'ready') void refresh();
   } else if (ev.type === 'session') void refresh();
   return false;
