@@ -50,10 +50,15 @@
   a { color: inherit; }
   .links { display: grid; gap: 6px; }
   footer { padding: 12px 16px 14px; color: var(--muted); font-size: 12px; }
+  #update { background: var(--surface); }
+  #update h2 { color: var(--ink); font-size: 13px; text-transform: none; letter-spacing: 0; }
+  #update ol { margin: 0 0 12px; padding-left: 18px; }
+  #update li { margin: 2px 0; }
 </style>
 </head>
 <body>
   <header><span id="logo"></span><h1>Narrata</h1></header>
+  <section id="update" hidden></section>
   <section>
     <h2>This page</h2>
     <div id="page"><p class="muted">Checking…</p></div>
@@ -70,7 +75,7 @@
   <section class="links">
     <a id="webapp" target="_blank" rel="noopener" href="#">PDFs, EPUBs and files: open them in the Narrata web app</a>
   </section>
-  <footer>Private: the voice runs on this computer. The only network request Narrata makes is the one-time voice download from Hugging Face. Nothing you read leaves your browser.</footer>
+  <footer>Private: the voice runs on this computer. Narrata connects to Hugging Face to download the voice, once, and to GitHub once a day to check for a new version. Nothing you read leaves your browser.</footer>
   <script type="module" src="./src/popup.ts"></script>
 </body>
 </html>

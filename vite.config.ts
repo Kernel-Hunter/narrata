@@ -36,7 +36,7 @@ function shellFiles(outDir: string, all: Set<string>): string[] {
  * Writes dist/sw.js with two lists: SHELL, cached while the worker installs (small, so the page
  * becomes cross-origin isolated within seconds even on a slow link), and PRECACHE, every other
  * built file with a short content hash, cached in the background once the worker runs so the
- * app works offline after the first visit.
+ * app works offline after the first visit. Also writes dist/version.json with the build id.
  */
 function serviceWorker(): Plugin {
   let outDir = 'dist';
@@ -60,20 +60,25 @@ function serviceWorker(): Plugin {
         }
       };
       walk(outDir);
-      const list = files.filter((f) => f !== 'sw.js' && !f.endsWith('.map')).sort();
+      const list = files.filter((f) => f !== 'sw.js' && f !== 'version.json' && !f.endsWith('.map')).sort();
       const template = readFileSync('src/pwa/sw.js', 'utf8');
-      const version = createHash('sha256').update(template);
+      const hash = createHash('sha256').update(template);
+      for (const f of list) hash.update(f).update(readFileSync(join(outDir, f)));
+      const version = hash.digest('hex').slice(0, 12);
+      // The page reads its own build id from index.html and compares it with version.json, which
+      // the service worker never caches, to tell when a newer deploy is out (src/pwa/update.ts).
+      const indexPath = join(outDir, 'index.html');
+      const html = readFileSync(indexPath, 'utf8');
+      writeFileSync(indexPath, html.replace('</head>', `  <meta name="narrata-build" content="${version}">\n  </head>`));
+      const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
+      writeFileSync(join(outDir, 'version.json'), JSON.stringify({ version: pkg.version, build: version }) + '\n');
       const revs: Record<string, string> = {};
-      for (const f of list) {
-        const data = readFileSync(join(outDir, f));
-        version.update(f).update(data);
-        revs[`./${f}`] = createHash('sha256').update(data).digest('hex').slice(0, 10);
-      }
+      for (const f of list) revs[`./${f}`] = createHash('sha256').update(readFileSync(join(outDir, f))).digest('hex').slice(0, 10);
       revs['./'] = revs['./index.html'];
       const shell = ['./', ...shellFiles(outDir, new Set(list)).map((f) => `./${f}`)];
       const rest = Object.keys(revs).filter((f) => !shell.includes(f));
       const src = template
-        .replaceAll('__VERSION__', version.digest('hex').slice(0, 12))
+        .replaceAll('__VERSION__', version)
         .replaceAll('__SHELL__', JSON.stringify(shell))
         .replaceAll('__PRECACHE__', JSON.stringify(rest))
         .replaceAll('__REVS__', JSON.stringify(revs));

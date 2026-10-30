@@ -91,8 +91,9 @@ export function sheet(title: string, body: Node[], opts: { onClose?: () => void;
 
 let region: HTMLElement | null = null;
 
+const toastRegion = () => (region ??= document.body.appendChild(h('div', { class: 'toast-region', role: 'status', 'aria-live': 'polite' })));
+
 export function toast(message: string, opts: { action?: string; onAction?: () => void; error?: boolean; ms?: number } = {}): void {
-  region ??= document.body.appendChild(h('div', { class: 'toast-region', role: 'status', 'aria-live': 'polite' }));
   const el = h('div', { class: `toast${opts.error ? ' error' : ''}` }, h('span', { class: 'grow' }, message));
   const remove = () => el.remove();
   if (opts.action) {
@@ -105,6 +106,25 @@ export function toast(message: string, opts: { action?: string; onAction?: () =>
       }, opts.action),
     );
   }
-  region.append(el);
+  toastRegion().append(el);
   setTimeout(remove, opts.ms ?? (opts.action ? 6000 : 3500));
+}
+
+/**
+ * A toast that stays until it is closed, with one action. The action may return false to keep
+ * the notice open (it is disabled while the action runs).
+ */
+export function notice(message: string, opts: { action: string; onAction: () => Promise<boolean | void> | boolean | void; className?: string }): () => void {
+  const el = h('div', { class: `toast notice${opts.className ? ` ${opts.className}` : ''}` }, h('span', { class: 'grow' }, message));
+  const remove = () => el.remove();
+  const action = h('button', {}, opts.action) as HTMLButtonElement;
+  action.addEventListener('click', async () => {
+    action.disabled = true;
+    const keep = (await opts.onAction()) === false;
+    action.disabled = false;
+    if (!keep) remove();
+  });
+  el.append(action, h('button', { class: 'notice-close', 'aria-label': 'Close', title: 'Close', html: icons.close, onclick: remove }));
+  toastRegion().append(el);
+  return remove;
 }
