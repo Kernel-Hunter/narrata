@@ -1,14 +1,14 @@
 import { Player, type PlaybackDoc, type PlayerState } from '../audio/player';
 import { MERGE_CHARS, type PlanOptions, documentSentences, planChunks } from '../core/chunker';
 import { estimateSeconds, formatBytes, formatDate, formatRate, formatRemaining } from '../core/format';
-import { shouldOfferFastVoice } from '../core/device';
+import { recommendVoice, shouldOfferFastVoice, type VoiceKind } from '../core/device';
 import { lastAtOrBefore, tokenizeWords, wordIndexAt } from '../core/text';
 import { ACCEPT, loadFile, loadPastedText } from '../docs';
 import type { LoadedDoc } from '../docs/types';
 import { TtsClient, type EngineInfo } from '../engine/client';
 import { downloadSize, type Variant } from '../engine/model-store';
 import type { Tuning } from '../engine/protocol';
-import { PIPER_VOICES, VOICES, accentLabel, fastVoiceFor, isPiper, voiceById } from '../engine/voices';
+import { DEFAULT_VOICE, PIPER_VOICES, VOICES, accentLabel, fastVoiceFor, isPiper, voiceById } from '../engine/voices';
 import { Library, type DocMeta } from '../store/library';
 import { loadSettings, saveSettings, type Settings } from '../store/settings';
 import { h, isTypingTarget, prefersReducedMotion } from './dom';
@@ -26,7 +26,10 @@ interface OpenDoc {
   view: DocView;
 }
 
-/** Engine overrides for measurements: ?debug&threads=2&variant=fp32&build=webgpu&opt=basic&exec=parallel */
+/**
+ * Engine overrides for measurements: ?debug&threads=2&variant=fp32&build=webgpu&opt=basic&exec=parallel.
+ * ?debug&failgpu treats every graphics chip result as bad audio, to check the fallback.
+ */
 function tuningFromUrl(): Tuning | undefined {
   const q = new URLSearchParams(location.search);
   if (!import.meta.env.DEV && !q.has('debug')) return undefined;
@@ -40,6 +43,7 @@ function tuningFromUrl(): Tuning | undefined {
   const opt = q.get('opt');
   const exec = q.get('exec');
   if (opt || exec) t.session = { graphOptimizationLevel: (opt ?? undefined) as 'all' | undefined, executionMode: (exec ?? undefined) as 'parallel' | undefined };
+  if (q.has('failgpu')) t.failGpu = true;
   return t;
 }
 
@@ -85,7 +89,7 @@ export class App {
 
   constructor(root: HTMLElement) {
     this.applyAppearance();
-    this.tts = new TtsClient(this.settings.model, tuningFromUrl());
+    this.tts = new TtsClient(this.settings.model, this.settings.voice, tuningFromUrl());
     this.player = new Player(this.tts, {
       onState: (s) => this.onPlayerState(s),
       onWord: (w) => this.onWord(w),
@@ -154,6 +158,7 @@ export class App {
 
     root.append(this.topbar, this.stage, this.backPill, this.bar.el, this.fileInput);
     this.tts.subscribe((info) => this.onEngine(info));
+    this.recheckWhenVisible();
     this.bindGlobalEvents();
     this.setupMediaSession();
     void this.start();
@@ -197,7 +202,10 @@ export class App {
     if (info.state === 'downloading' && info.download) return `Downloading voice ${Math.floor((info.download.loaded / info.download.total) * 100)}%`;
     if (info.state === 'loading') return info.stage ?? 'Preparing the voice';
     if (info.state === 'error') return 'Voice unavailable';
-    if (info.voiceDownload) return `Downloading ${voiceById(info.voiceDownload.voice).name} ${Math.floor((info.voiceDownload.loaded / Math.max(1, info.voiceDownload.total)) * 100)}%`;
+    if (info.voiceDownload) {
+      const v = voiceById(info.voiceDownload.voice);
+      return `Downloading ${isPiper(v) ? v.name : 'the natural voice'} ${Math.floor((info.voiceDownload.loaded / Math.max(1, info.voiceDownload.total)) * 100)}%`;
+    }
     if (info.state === 'ready') return isPiper(voiceById(this.settings.voice)) ? 'Fast voice · on this device' : `On this device · ${info.device === 'webgpu' ? 'graphics chip' : 'processor'}`;
     if (info.state === 'needs-download') return 'Voice not downloaded yet';
     return '';
@@ -226,11 +234,35 @@ export class App {
   }
   private lastFallback?: string;
 
-  private sizeFor(choice: 'auto' | 'compact'): number {
+  /** Download size of the selected voice (what is still missing), or of the model for `choice`. */
+  private sizeFor(choice: 'auto' | 'compact' = this.settings.model): number {
     const s = this.tts.info.status;
-    if (!s) return downloadSize(choice === 'compact' ? 'q8' : 'fp32');
+    if (!s) return downloadSize(choice === 'compact' ? 'uint8' : 'fp32');
     if (choice === this.settings.model) return s.plan.missingBytes || s.plan.bytes;
-    return downloadSize(choice === 'compact' || !s.hasWebGPU ? 'q8' : 'fp32');
+    return downloadSize(choice === 'compact' || !s.hasWebGPU ? 'uint8' : 'fp32');
+  }
+
+  /**
+   * Browsers run hidden tabs at low priority (on a Mac, on the efficiency cores), so a speed test
+   * made while the tab was opened in the background reads several times too slow. If the tab was
+   * hidden at start, check again once it has been visible for a moment.
+   */
+  private recheckWhenVisible() {
+    if (!document.hidden) return;
+    const onVisible = () => {
+      if (document.hidden) return;
+      document.removeEventListener('visibilitychange', onVisible);
+      setTimeout(() => {
+        if (this.isFirstRun()) void this.tts.probe();
+      }, 500);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+  }
+
+  /** Nothing is stored yet: offer the choice between the natural and the fast voice. */
+  private isFirstRun(): boolean {
+    const s = this.tts.info.status;
+    return !!s && s.storedBytes === 0 && this.tts.info.state === 'needs-download';
   }
 
   private async startDownload(choice: 'auto' | 'compact' = this.settings.model) {
@@ -245,10 +277,57 @@ export class App {
     }
   }
 
+  /** First-run choice: select a voice of that kind and download it. */
+  private pickVoiceKind(kind: VoiceKind, choice: 'auto' | 'compact' = this.settings.model) {
+    const current = voiceById(this.settings.voice);
+    const id = kind === 'fast' ? (isPiper(current) ? current.id : fastVoiceFor(current).id) : isPiper(current) ? DEFAULT_VOICE : current.id;
+    if (id !== this.settings.voice) {
+      this.settings.voice = id;
+      this.save();
+      this.bar.setVoice(voiceById(id));
+      this.player.setVoice(id);
+    }
+    void this.startDownload(choice);
+  }
+
+  /**
+   * The first-run card: the natural voice or the fast one, with the size of each and a suggestion
+   * from the device check made by the worker (see recommendVoice).
+   */
+  private voiceChoice(onPick: (kind: VoiceKind, choice?: 'auto' | 'compact') => void): HTMLElement {
+    const s = this.tts.info.status!;
+    const advice = s.probe ? recommendVoice(s.probe) : null;
+    const natural = s.kokoro.missingBytes || s.kokoro.bytes;
+    const fast = fastVoiceFor(voiceById(this.settings.voice));
+    const fastSize = fast.bytes + fast.configBytes;
+    const option = (kind: VoiceKind, title: string, size: number, text: string) =>
+      h(
+        'button',
+        { class: 'choice', 'data-kind': kind, 'aria-describedby': 'choice-reason', onclick: () => onPick(kind) },
+        h('span', { class: 'choice-head' }, h('span', { class: 'choice-title' }, title), advice?.pick === kind ? h('span', { class: 'choice-badge' }, 'Recommended') : null),
+        h('span', { class: 'choice-text' }, text),
+        h('span', { class: 'choice-size', html: `${icons.download}<span>Download ${formatBytes(size)}</span>` }),
+      );
+    return h(
+      'div',
+      { class: 'choice-wrap' },
+      h(
+        'div',
+        { class: 'choice-row' },
+        option('natural', 'Natural voice', natural, 'Best quality. 28 voices. Needs a fairly recent computer.'),
+        option('fast', 'Fast voice', fastSize, 'Works on any computer. Sounds less natural. 3 voices.'),
+      ),
+      h('p', { class: 'choice-reason', id: 'choice-reason' }, advice ? advice.reason : 'Checking how fast this computer is.', ' You can switch voices later in the voice menu.'),
+      s.hasWebGPU && this.settings.model === 'auto'
+        ? h('button', { class: 'btn btn-quiet choice-compact', onclick: () => onPick('natural', 'compact') }, `Natural voice, smaller download (${formatBytes(downloadSize('uint8'))}), runs on the processor`)
+        : null,
+    );
+  }
+
   private confirmDownload(): Promise<boolean> {
     return new Promise((resolve) => {
       const s = this.tts.info.status;
-      const size = formatBytes(this.sizeFor(this.settings.model));
+      const size = formatBytes(this.sizeFor());
       let decided = false;
       const done = (v: boolean, choice?: 'auto' | 'compact') => {
         decided = true;
@@ -256,17 +335,35 @@ export class App {
         if (v) void this.startDownload(choice);
         resolve(v);
       };
-      const body: Node[] = [
-        h('p', { class: 'sheet-text' }, `Narrata reads with Kokoro, an open voice model that runs on this device. It is a one-time download of ${size}, stored in this browser for offline use.`),
-        h(
-          'div',
-          { class: 'sheet-actions' },
-          s?.hasWebGPU && this.settings.model === 'auto' ? h('button', { class: 'btn btn-quiet', onclick: () => done(true, 'compact') }, `Use the smaller model (${formatBytes(downloadSize('uint8'))})`) : null,
-          h('button', { class: 'btn', onclick: () => done(false) }, 'Not now'),
-          h('button', { class: 'btn btn-primary', html: `${icons.download}<span>Download ${size}</span>`, onclick: () => done(true, this.settings.model) }),
-        ),
-      ];
-      const { close } = sheet('Download the voice', body, { onClose: () => !decided && resolve(false) });
+      const fast = isPiper(voiceById(this.settings.voice));
+      const body: Node[] = this.isFirstRun()
+        ? [
+            h('p', { class: 'sheet-text' }, 'Narrata reads with a voice that runs on this device. Pick one to download once; it is stored in this browser for offline use.'),
+            this.voiceChoice((kind, choice) => {
+              decided = true;
+              close();
+              this.pickVoiceKind(kind, choice);
+              resolve(true);
+            }),
+            h('div', { class: 'sheet-actions' }, h('button', { class: 'btn', onclick: () => done(false) }, 'Not now')),
+          ]
+        : [
+            h(
+              'p',
+              { class: 'sheet-text' },
+              fast
+                ? `The fast voice runs on this device. It is a one-time download of ${size}, stored in this browser for offline use.`
+                : `Narrata reads with Kokoro, an open voice model that runs on this device. It is a one-time download of ${size}, stored in this browser for offline use.`,
+            ),
+            h(
+              'div',
+              { class: 'sheet-actions' },
+              !fast && s?.hasWebGPU && this.settings.model === 'auto' ? h('button', { class: 'btn btn-quiet', onclick: () => done(true, 'compact') }, `Use the smaller model (${formatBytes(downloadSize('uint8'))})`) : null,
+              h('button', { class: 'btn', onclick: () => done(false) }, 'Not now'),
+              h('button', { class: 'btn btn-primary', html: `${icons.download}<span>Download ${size}</span>`, onclick: () => done(true, this.settings.model) }),
+            ),
+          ];
+      const { close } = sheet(this.isFirstRun() ? 'Choose a voice' : 'Download the voice', body, { onClose: () => !decided && resolve(false) });
     });
   }
 
@@ -337,14 +434,22 @@ export class App {
         card.replaceChildren(head('Checking this device', 'One moment.'));
         break;
       case 'needs-download': {
-        const size = formatBytes(this.sizeFor(this.settings.model));
+        if (this.isFirstRun()) {
+          card.replaceChildren(
+            head('Choose a voice', 'Downloaded once and stored on this device, so it works offline. Nothing you read is uploaded.'),
+            this.voiceChoice((kind, choice) => this.pickVoiceKind(kind, choice)),
+          );
+          break;
+        }
+        const size = formatBytes(this.sizeFor());
+        const fast = isPiper(voiceById(this.settings.voice));
         card.replaceChildren(
-          head('Download the voice once', `${size}, stored on this device so it works offline. Nothing you read is uploaded.`),
+          head(fast ? 'Download the fast voice once' : 'Download the voice once', `${size}, stored on this device so it works offline. Nothing you read is uploaded.`),
           h(
             'div',
             { class: 'voice-card-actions' },
             h('button', { class: 'btn btn-primary', html: `${icons.download}<span>Download voice (${size})</span>`, onclick: () => void this.startDownload() }),
-            s?.hasWebGPU && this.settings.model === 'auto' ? h('button', { class: 'btn btn-quiet', onclick: () => void this.startDownload('compact') }, `Smaller model (${formatBytes(downloadSize('uint8'))}), slower`) : null,
+            !fast && s?.hasWebGPU && this.settings.model === 'auto' ? h('button', { class: 'btn btn-quiet', onclick: () => void this.startDownload('compact') }, `Smaller model (${formatBytes(downloadSize('uint8'))}), slower`) : null,
           ),
         );
         break;
@@ -367,7 +472,11 @@ export class App {
         card.replaceChildren(head(info.stage ?? 'Preparing the voice', 'This takes a few seconds.', icons.spinner));
         break;
       case 'ready':
-        card.replaceChildren(head('Voice ready', `Runs on this device's ${info.device === 'webgpu' ? 'graphics chip' : 'processor'}. Pick a sample or open a file.`, icons.check));
+        card.replaceChildren(
+          info.engine === 'piper'
+            ? head('Fast voice ready', 'Runs on this device. Pick a sample or open a file. The natural voices are in the voice menu.', icons.check)
+            : head('Voice ready', `Runs on this device's ${info.device === 'webgpu' ? 'graphics chip' : 'processor'}. Pick a sample or open a file.`, icons.check),
+        );
         break;
       case 'error':
         card.replaceChildren(
@@ -634,6 +743,19 @@ export class App {
     this.settings.voice = id;
     this.save();
     this.bar.setVoice(voiceById(id));
+    const info = this.tts.info;
+    if (info.state === 'needs-download' || info.state === 'error' || info.state === 'starting') {
+      // Nothing is loaded yet: download nothing now, show what this voice needs instead.
+      this.player.setVoice(id);
+      void this.tts.select(this.settings.model, id);
+      if (this.voicePop.open) this.voicePop.render();
+      return;
+    }
+    const v = voiceById(id);
+    const kokoro = info.status?.kokoro;
+    if (!isPiper(v) && info.engine === 'piper' && kokoro && kokoro.missingBytes > 0) {
+      toast(`Downloading the natural voice (${formatBytes(kokoro.missingBytes)}). The fast voice keeps reading until it is ready.`);
+    }
     this.tts
       .ensureVoice(id)
       .then(() => {
@@ -664,8 +786,8 @@ export class App {
     this.save();
     const fast = fastVoiceFor(v);
     const size = this.tts.info.status?.fastVoices.includes(fast.id) ? '' : ` (${formatBytes(fast.bytes)} download)`;
-    toast(`Your computer is a bit slow for the natural voice. Use the faster voice${size}?`, {
-      action: 'Use faster voice',
+    toast(`The natural voice is too slow on this computer to read without pauses. Switch to the fast voice${size}?`, {
+      action: 'Use fast voice',
       ms: 15000,
       onAction: () => this.setVoice(fast.id),
     });
@@ -961,14 +1083,16 @@ export class App {
       if (isPiper(v) && !stored.includes(id)) r.querySelector('.voice-meta')?.append(` · ${formatBytes(v.bytes)}`);
       return r;
     };
+    const kokoro = this.tts.info.status?.kokoro;
+    const naturalNote = kokoro && kokoro.missingBytes > 0 && this.tts.info.state === 'ready' ? h('p', { class: 'pop-note' }, `The natural voices need a one-time download of ${formatBytes(kokoro.missingBytes)}.`) : null;
     return [
-      h('div', { class: 'pop-section' }, h('p', { class: 'pop-title' }, 'Best voices'), ...best.map(row)),
+      h('div', { class: 'pop-section' }, h('p', { class: 'pop-title' }, 'Best voices'), naturalNote, ...best.map(row)),
       h('div', { class: 'pop-section' }, h('p', { class: 'pop-title' }, 'American'), ...VOICES.filter((v) => v.lang === 'a' && !best.includes(v.id)).map((v) => row(v.id))),
       h('div', { class: 'pop-section' }, h('p', { class: 'pop-title' }, 'British'), ...VOICES.filter((v) => v.lang === 'b' && !best.includes(v.id)).map((v) => row(v.id))),
       h(
         'div',
         { class: 'pop-section' },
-        h('p', { class: 'pop-title' }, 'Faster voices'),
+        h('p', { class: 'pop-title' }, 'Fast voices'),
         h('p', { class: 'pop-note' }, 'Simpler voices that need much less computing power, for computers where the natural voice pauses. They run on this device too.'),
         ...PIPER_VOICES.map((v) => fastRow(v.id)),
       ),
@@ -1145,19 +1269,19 @@ export class App {
     const stored = info.status?.storedBytes ?? 0;
     const voice = voiceById(this.settings.voice);
     const modelLine = info.state !== 'ready'
-      ? 'Kokoro-82M, not loaded.'
+      ? 'No voice loaded yet.'
       : isPiper(voice)
         ? `Piper voice ${voice.name} on the processor (WebAssembly, ${info.threads ?? 1} thread${info.threads === 1 ? '' : 's'}).`
         : `Kokoro-82M (${info.variant === 'fp32' ? 'full precision' : '8-bit'}) on the ${info.device === 'webgpu' ? 'graphics chip (WebGPU)' : `processor (WebAssembly, ${info.threads ?? 1} thread${info.threads === 1 ? '' : 's'})`}.`;
     const { close } = sheet('About Narrata', [
-      h('p', { class: 'sheet-text' }, 'Narrata reads text aloud with Kokoro-82M, an open voice model, running entirely in your browser through ONNX Runtime Web. Documents, reading positions and the voice are stored only on this device.'),
+      h('p', { class: 'sheet-text' }, 'Narrata reads text aloud with open voice models (Kokoro-82M for the natural voices, Piper for the fast ones) running entirely in your browser through ONNX Runtime Web. Documents, reading positions and the voices are stored only on this device.'),
       h('ul', { class: 'about-list' },
         h('li', {}, modelLine),
         h('li', {}, `Voice data stored: ${formatBytes(stored)}${info.status?.persistent ? '' : ' (temporary: this browser does not allow storing files)'}.`),
         h('li', {}, `Library: ${this.recent.length} document${this.recent.length === 1 ? '' : 's'}.`),
         h('li', {}, `Cross-origin isolated: ${self.crossOriginIsolated ? 'yes (multi-threaded)' : 'no (single thread)'}.`),
       ),
-      h('p', { class: 'small', style: 'margin-top:14px' }, 'Free software under the MIT License. Built with Kokoro, misaki, transformers.js, ONNX Runtime Web, pdf.js, Readability, fflate, Signalsmith Stretch and mp4-muxer.'),
+      h('p', { class: 'small', style: 'margin-top:14px' }, 'Free software under the MIT License. Built with Kokoro, Piper, misaki, ONNX Runtime Web, pdf.js, Readability, fflate, Signalsmith Stretch and mp4-muxer.'),
       h(
         'div',
         { class: 'sheet-actions' },
