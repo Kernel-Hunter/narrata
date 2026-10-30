@@ -37,7 +37,7 @@ await build({
 });
 
 // 3. ONNX Runtime Web, loaded by the worker from ort/ (copied into public/ort by copy-assets).
-// transformers.js makes Vite emit a second copy of the wasm; the worker never loads it.
+// ONNX Runtime's bundled builds make Vite emit second copies of the wasm; the worker never loads them.
 for (const f of readdirSync(join(out, 'assets'))) if (/^ort-wasm.*\.wasm$/.test(f)) rmSync(join(out, 'assets', f));
 cpSync(join(root, 'public/ort'), join(out, 'ort'), { recursive: true });
 

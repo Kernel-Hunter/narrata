@@ -18,8 +18,8 @@ function serviceWorker(): Plugin {
       outDir = c.build.outDir;
     },
     closeBundle() {
-      // transformers.js makes Vite emit its own copy of the ONNX Runtime wasm (21 MB). The worker
-      // loads the self-hosted copy in ort/ (env.backends.onnx.wasm.wasmPaths), so drop the duplicate.
+      // ONNX Runtime's bundled builds make Vite emit their own copy of the wasm. The worker loads
+      // the self-hosted copy in ort/ (env.wasm.wasmPaths), so drop the duplicates.
       const assets = join(outDir, 'assets');
       for (const f of readdirSync(assets)) if (/^ort-wasm.*\.wasm$/.test(f)) rmSync(join(assets, f));
       const files: string[] = [];

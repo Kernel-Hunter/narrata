@@ -6,11 +6,22 @@ export const MODEL_REPO = 'onnx-community/Kokoro-82M-v1.0-ONNX-timestamped';
 /** Pinned revision so every install loads the same files. */
 export const MODEL_REVISION = 'dd4401a9add81ac692d20e240d22ec9dda82cc29';
 
-export type Variant = 'fp32' | 'q8';
+/**
+ * Model files of the export. The app uses fp32 on the graphics chip and uint8 on the processor
+ * (q8 for installs that stored it before); the others are only reachable with ?debug&variant= for
+ * measurements.
+ */
+export type Variant = 'fp32' | 'q8' | 'q8f16' | 'uint8' | 'uint8f16' | 'q4' | 'q4f16' | 'fp16';
 
 export const MODEL_FILES: Record<Variant, { path: string; bytes: number }> = {
   fp32: { path: 'onnx/model.onnx', bytes: 325_532_171 },
   q8: { path: 'onnx/model_quantized.onnx', bytes: 92_361_055 },
+  q8f16: { path: 'onnx/model_q8f16.onnx', bytes: 86_072_942 },
+  uint8: { path: 'onnx/model_uint8.onnx', bytes: 177_464_571 },
+  uint8f16: { path: 'onnx/model_uint8f16.onnx', bytes: 114_182_909 },
+  q4: { path: 'onnx/model_q4.onnx', bytes: 305_215_905 },
+  q4f16: { path: 'onnx/model_q4f16.onnx', bytes: 154_584_426 },
+  fp16: { path: 'onnx/model_fp16.onnx', bytes: 163_232_776 },
 };
 
 export const SUPPORT_FILES = [
@@ -23,9 +34,17 @@ export const VOICE_BYTES = 522_240;
 
 export const HF_PREFIX = `https://huggingface.co/${MODEL_REPO}/resolve/${MODEL_REVISION}/`;
 
-export function remoteUrl(path: string): string {
-  return HF_PREFIX + path;
+/** Where a store's files come from and the OPFS directory they are kept in. */
+export interface StoreSource {
+  urlPrefix: string;
+  dirName: string;
 }
+
+export const KOKORO_SOURCE: StoreSource = { urlPrefix: HF_PREFIX, dirName: `kokoro-${MODEL_REVISION.slice(0, 12)}` };
+
+/** Piper voices (rhasspy/piper-voices), pinned like the Kokoro export. */
+export const PIPER_REVISION = '5041a7a49ae5b3a0f30e6837769eb03fdbb231bd';
+export const PIPER_SOURCE: StoreSource = { urlPrefix: `https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_REVISION}/`, dirName: `piper-${PIPER_REVISION.slice(0, 12)}` };
 
 export function voicePath(id: string): string {
   return `voices/${id}.bin`;
@@ -47,6 +66,8 @@ export interface Progress {
 
 /** OPFS-backed store with an in-memory fallback when OPFS is unavailable. */
 export class ModelStore {
+  constructor(private readonly source: StoreSource = KOKORO_SOURCE) {}
+
   private dir: FileSystemDirectoryHandle | null = null;
   private manifest: Manifest = {};
   private memory = new Map<string, Uint8Array>();
@@ -56,7 +77,7 @@ export class ModelStore {
     try {
       const root = await navigator.storage.getDirectory();
       const models = await root.getDirectoryHandle('models', { create: true });
-      this.dir = await models.getDirectoryHandle(`kokoro-${MODEL_REVISION.slice(0, 12)}`, { create: true });
+      this.dir = await models.getDirectoryHandle(this.source.dirName, { create: true });
       this.manifest = await this.readManifest();
       this.persistent = true;
     } catch {
@@ -120,7 +141,7 @@ export class ModelStore {
 
   private async download(path: string, expected: number, onBytes: (n: number) => void, signal?: AbortSignal): Promise<void> {
     if (!this.dir) {
-      const res = await fetch(remoteUrl(path), { signal });
+      const res = await fetch(this.source.urlPrefix + path, { signal });
       if (!res.ok) throw new Error(`Download failed (${res.status}) for ${path}`);
       const buf = new Uint8Array(await res.arrayBuffer());
       this.memory.set(path, buf);
@@ -136,12 +157,12 @@ export class ModelStore {
         offset = 0;
       }
       const headers: HeadersInit = offset > 0 ? { Range: `bytes=${offset}-` } : {};
-      let res = await fetch(remoteUrl(path), { headers, signal });
+      let res = await fetch(this.source.urlPrefix + path, { headers, signal });
       if (offset > 0 && res.status !== 206) {
         // Server ignored the range: start over.
         h.truncate(0);
         offset = 0;
-        if (!res.ok) res = await fetch(remoteUrl(path), { signal });
+        if (!res.ok) res = await fetch(this.source.urlPrefix + path, { signal });
       }
       if (!res.ok || !res.body) throw new Error(`Download failed (${res.status}) for ${path}`);
       onBytes(offset);

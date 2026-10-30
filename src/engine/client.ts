@@ -1,7 +1,7 @@
 // Main-thread side of the TTS worker.
 
 import type { ChunkEnd } from '../core/chunker';
-import type { Device, EngineStatus, FromWorker, GenResult, ModelChoice, ToWorker } from './protocol';
+import type { Device, EngineStatus, FromWorker, GenResult, ModelChoice, ToWorker, Tuning } from './protocol';
 import type { Variant } from './model-store';
 
 export type EngineState = 'starting' | 'needs-download' | 'downloading' | 'loading' | 'ready' | 'error';
@@ -16,7 +16,13 @@ export interface EngineInfo {
   loadMs?: number;
   /** Duration of the start-up self-test (one short sentence), a rough speed indicator. */
   testMs?: number;
+  /** Generation speed in the self-test: seconds of audio per second. */
+  testRtf?: number;
   threads?: number;
+  /** Which model the ready voice uses. */
+  engine?: 'kokoro' | 'piper';
+  /** Download of a fast voice in progress. */
+  voiceDownload?: { voice: string; loaded: number; total: number };
   error?: string;
   fallback?: string;
 }
@@ -34,15 +40,15 @@ export class TtsClient {
   private pending = new Map<number, Pending>();
   private listeners = new Set<Listener>();
   private exports = new Map<number, { onProgress: (done: number, total: number, seconds: number) => void; resolve: (r: { data: ArrayBuffer; mime: string; ext: string; seconds: number }) => void; reject: (e: Error) => void }>();
-  private voiceWaiters = new Map<string, (() => void)[]>();
+  private voiceWaiters = new Map<string, { resolve: () => void; reject: (e: Error) => void }[]>();
   info: EngineInfo = { state: 'starting' };
   private readyWaiters: { resolve: () => void; reject: (e: Error) => void }[] = [];
 
-  constructor(choice: ModelChoice) {
+  constructor(choice: ModelChoice, tuning?: Tuning) {
     this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module', name: 'narrata-tts' });
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => this.onMessage(e.data);
     this.worker.onerror = (e) => this.update({ state: 'error', error: e.message || 'The voice engine failed to start.' });
-    this.send({ type: 'init', baseUrl: new URL('./', document.baseURI).href, choice });
+    this.send({ type: 'init', baseUrl: new URL('./', document.baseURI).href, choice, tuning });
   }
 
   private send(m: ToWorker, transfer: Transferable[] = []) {
@@ -74,7 +80,7 @@ export class TtsClient {
         this.update({ state: 'loading', stage: m.stage });
         break;
       case 'ready':
-        this.update({ state: 'ready', device: m.device, variant: m.variant, loadMs: m.loadMs, testMs: m.testMs, threads: m.threads, stage: undefined, error: undefined });
+        this.update({ state: 'ready', device: m.device, variant: m.variant, engine: m.engine, loadMs: m.loadMs, testMs: m.testMs, testRtf: m.testRtf, threads: m.threads, stage: undefined, error: undefined, voiceDownload: undefined });
         this.readyWaiters.splice(0).forEach((w) => w.resolve());
         void navigator.storage?.persist?.().catch(() => false);
         break;
@@ -94,8 +100,17 @@ export class TtsClient {
         break;
       }
       case 'voice-ready':
-        this.voiceWaiters.get(m.voice)?.forEach((f) => f());
+        this.voiceWaiters.get(m.voice)?.forEach((w) => w.resolve());
         this.voiceWaiters.delete(m.voice);
+        if (this.info.voiceDownload?.voice === m.voice) this.update({ voiceDownload: undefined });
+        break;
+      case 'voice-error':
+        this.voiceWaiters.get(m.voice)?.forEach((w) => w.reject(new Error(m.message)));
+        this.voiceWaiters.delete(m.voice);
+        if (this.info.voiceDownload?.voice === m.voice) this.update({ voiceDownload: undefined });
+        break;
+      case 'voice-download':
+        this.update({ voiceDownload: { voice: m.voice, loaded: m.loaded, total: m.total } });
         break;
       case 'export-progress':
         this.exports.get(m.id)?.onProgress(m.done, m.total, m.seconds);
@@ -113,7 +128,7 @@ export class TtsClient {
         break;
       }
       case 'error':
-        this.update({ state: this.info.state === 'ready' ? 'ready' : 'error', error: m.message });
+        this.update({ state: this.info.state === 'ready' ? 'ready' : 'error', error: m.message, voiceDownload: undefined });
         this.readyWaiters.splice(0).forEach((w) => w.reject(new Error(m.message)));
         break;
     }
@@ -146,10 +161,11 @@ export class TtsClient {
     this.send({ type: 'cancel', epoch });
   }
 
+  /** Make a voice ready (fast voices are downloaded the first time). */
   ensureVoice(voice: string): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const list = this.voiceWaiters.get(voice) ?? [];
-      list.push(resolve);
+      list.push({ resolve, reject });
       this.voiceWaiters.set(voice, list);
       if (list.length === 1) this.send({ type: 'voice', voice });
     });

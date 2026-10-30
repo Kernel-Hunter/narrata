@@ -82,8 +82,7 @@ const resolvePkg = (name, from = root) => {
     }
   }
 };
-const transformers = resolvePkg('@huggingface/transformers');
-addPackage(resolvePkg('onnxruntime-web', transformers), 'copied (ort/)');
+addPackage(resolvePkg('onnxruntime-web'), 'copied (ort/)');
 addPackage(resolvePkg('pdfjs-dist'), 'copied (pdfjs/)');
 addPackage(resolvePkg('@fontsource/opendyslexic'), 'copied (font)');
 addPackage(resolvePkg('signalsmith-stretch'), 'copied (audio worklet)');

@@ -2,18 +2,20 @@
 // TTS worker: downloads and stores the model, picks a device that produces sane audio,
 // generates chunks in priority order (preview > playback > export) and encodes exports.
 
-import { env, StyleTextToSpeech2Model, Tensor } from '@huggingface/transformers';
 import { tokenTimings, wordTimings, shiftTimings, type WordTiming } from '../core/align';
 import { checkAudio, concatFloat32, encodeWav, shapeJoint } from '../core/audio';
 import { splitLong, type ChunkEnd } from '../core/chunker';
+import { cpuVariant as pickCpuVariant, threadCount as pickThreads } from '../core/device';
 import { tokenizeWords } from '../core/text';
 import { fetchData } from './g2p/assets';
 import { EnglishG2P } from './g2p/english';
 import type { G2P, PhonemeToken } from './g2p/types';
-import { HF_PREFIX, MODEL_FILES, MODEL_REPO, MODEL_REVISION, ModelStore, SUPPORT_FILES, VOICE_BYTES, downloadSize, voicePath, type Variant } from './model-store';
+import { MODEL_FILES, ModelStore, PIPER_SOURCE, SUPPORT_FILES, VOICE_BYTES, downloadSize, voicePath, type Variant } from './model-store';
+import { PiperModel, phonemeDurations, piperInput, resample, type PiperConfig } from './piper/piper';
+import { createSession, loadRuntime, type OrtModule, type Session } from './runtime';
 import { encodeM4a } from './export-m4a';
-import type { Device, EngineStatus, ExportRequest, FromWorker, GenRequest, ModelChoice, ToWorker } from './protocol';
-import { voiceById } from './voices';
+import type { Device, EngineStatus, ExportRequest, FromWorker, GenRequest, ModelChoice, ToWorker, Tuning } from './protocol';
+import { DEFAULT_VOICE, PIPER_VOICES, isPiper, voiceById, type PiperVoice } from './voices';
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -22,14 +24,21 @@ const MAX_TOKENS = 510;
 const TEST_SENTENCE = 'Hello! This is a short test of the voice, to check that everything sounds right.';
 
 const store = new ModelStore();
+const piperStore = new ModelStore(PIPER_SOURCE);
 const g2p: G2P = new EnglishG2P(fetchData);
-let model: StyleTextToSpeech2Model | null = null;
+let model: Session | null = null;
+/** The Kokoro model to load when a Kokoro voice is used (set by prepare). */
+let kokoroPlan: { variant: Variant; device: Device } | null = null;
+let piper: { id: string; model: PiperModel } | null = null;
+let ort: OrtModule | null = null;
 let device: Device = 'wasm';
 let variant: Variant = 'q8';
 let vocab: Map<string, number> | null = null;
 const voices = new Map<string, Float32Array>();
 let hasWebGPU = false;
 let threads = 1;
+let tuning: Tuning = {};
+let lastChoice: ModelChoice = 'auto';
 
 const post = (m: FromWorker, transfer: Transferable[] = []) => self.postMessage(m, transfer);
 
@@ -42,8 +51,17 @@ async function detectWebGPU(): Promise<boolean> {
   }
 }
 
+/**
+ * The processor uses the 8-bit model with static quantization (uint8, 178 MB): in ONNX Runtime Web
+ * it generates about twice as fast as the dynamically quantized q8 export (93 MB) and as fast as
+ * full precision (326 MB), with about the same quality as q8. See cpuVariant in core/device.ts.
+ */
+function cpuVariant(): Variant {
+  return tuning.variant ?? pickCpuVariant(store.has(MODEL_FILES.q8.path), store.has(MODEL_FILES.uint8.path));
+}
+
 function planFor(choice: ModelChoice): { variant: Variant; device: Device } {
-  if (choice === 'compact' || !hasWebGPU) return { variant: 'q8', device: 'wasm' };
+  if (choice === 'compact' || !hasWebGPU) return { variant: cpuVariant(), device: 'wasm' };
   return { variant: 'fp32', device: 'webgpu' };
 }
 
@@ -52,33 +70,15 @@ function status(choice: ModelChoice): EngineStatus {
   const stored = (Object.keys(MODEL_FILES) as Variant[]).filter((v) => store.has(MODEL_FILES[v].path));
   const files = [MODEL_FILES[plan.variant], ...SUPPORT_FILES, { path: voicePath('af_heart'), bytes: VOICE_BYTES }];
   const missingBytes = files.filter((f) => !store.has(f.path)).reduce((s, f) => s + f.bytes, 0);
-  return { hasWebGPU, stored, plan: { ...plan, bytes: downloadSize(plan.variant), missingBytes }, persistent: store.persistent, storedBytes: store.storedBytes() };
+  const fastVoices = PIPER_VOICES.filter((v) => piperFiles(v).every((f) => piperStore.has(f.path))).map((v) => v.id);
+  return { hasWebGPU, stored, fastVoices, plan: { ...plan, bytes: downloadSize(plan.variant), missingBytes }, persistent: store.persistent, storedBytes: store.storedBytes() + piperStore.storedBytes() };
 }
 
-/** transformers.js reads model files through this cache, backed by our OPFS store. */
-const opfsCache = {
-  async match(request: string | Request): Promise<Response | undefined> {
-    const url = typeof request === 'string' ? request : request.url;
-    if (!url.startsWith(HF_PREFIX)) return undefined;
-    const blob = await store.read(url.slice(HF_PREFIX.length));
-    return blob ? new Response(blob, { headers: { 'content-length': String(blob.size) } }) : undefined;
-  },
-  async put(): Promise<void> {
-    // Files are stored by ModelStore before loading.
-  },
-};
+let baseUrl = '';
 
-function configureRuntime(baseUrl: string) {
-  env.allowLocalModels = false;
-  env.useBrowserCache = false;
-  env.useCustomCache = true;
-  env.customCache = opfsCache;
-  const onnx = env.backends.onnx as { wasm?: { wasmPaths?: string; numThreads?: number; proxy?: boolean } };
-  if (onnx.wasm) {
-    onnx.wasm.wasmPaths = new URL('ort/', baseUrl).href;
-    threads = self.crossOriginIsolated ? Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1)) : 1;
-    onnx.wasm.numThreads = threads;
-  }
+function threadCount(): number {
+  if (!self.crossOriginIsolated) return 1;
+  return tuning.threads ?? pickThreads(navigator.hardwareConcurrency, true);
 }
 
 async function loadVocab(): Promise<Map<string, number>> {
@@ -86,6 +86,52 @@ async function loadVocab(): Promise<Map<string, number>> {
   if (!blob) throw new Error('Tokenizer missing');
   const json = JSON.parse(await blob.text()) as { model: { vocab: Record<string, number> } };
   return new Map(Object.entries(json.model.vocab));
+}
+
+function piperFiles(v: PiperVoice) {
+  return [
+    { path: `${v.path}.onnx`, bytes: v.bytes },
+    { path: `${v.path}.onnx.json`, bytes: v.configBytes },
+  ];
+}
+
+/** Download (with progress) and load a Piper voice; one is kept in memory at a time. */
+async function ensurePiper(v: PiperVoice): Promise<PiperModel> {
+  if (piper?.id === v.id) return piper.model;
+  const files = piperFiles(v);
+  await piperStore.ensure(files, (p) => post({ type: 'voice-download', voice: v.id, loaded: p.loaded, total: p.total }));
+  const [modelBlob, configBlob] = await Promise.all(files.map((f) => piperStore.read(f.path)));
+  if (!modelBlob || !configBlob) throw new Error(`Voice ${v.name} is not available`);
+  if (piper) await piper.model.release().catch(() => {});
+  piper = null;
+  if (!ort) {
+    threads = threadCount();
+    ort = await loadRuntime('wasm', { wasmBase: new URL('ort/', baseUrl).href, threads, build: tuning.build });
+  }
+  const config = JSON.parse(await configBlob.text()) as PiperConfig;
+  piper = { id: v.id, model: await PiperModel.load(ort, new Uint8Array(await modelBlob.arrayBuffer()), config) };
+  return piper.model;
+}
+
+/** Load the Kokoro model if a Kokoro voice is used after starting with a Piper voice. */
+let kokoroLoading: Promise<void> | null = null;
+function ensureKokoro(): Promise<void> {
+  if (model) return Promise.resolve();
+  const plan = kokoroPlan;
+  if (!plan) return Promise.reject(new Error('Model not loaded'));
+  kokoroLoading ??= loadModel(plan.variant, plan.device)
+    .then(async (loadMs) => {
+      // Measure the speed as prepare does, so playback does not start with a guess.
+      post({ type: 'loading', stage: 'Checking the voice' });
+      const t0 = performance.now();
+      const test = await synthesizeKokoro(TEST_SENTENCE, DEFAULT_VOICE);
+      const testMs = performance.now() - t0;
+      post({ type: 'ready', device, variant, engine: 'kokoro', loadMs: Math.round(loadMs), testMs: Math.round(testMs), testRtf: +(test.audio.length / SAMPLE_RATE / (testMs / 1000)).toFixed(3), threads });
+    })
+    .finally(() => {
+      kokoroLoading = null;
+    });
+  return kokoroLoading;
 }
 
 async function ensureVoice(id: string): Promise<Float32Array> {
@@ -103,15 +149,16 @@ async function ensureVoice(id: string): Promise<Float32Array> {
 async function loadModel(v: Variant, d: Device): Promise<number> {
   const t0 = performance.now();
   if (model) {
-    await model.dispose().catch(() => {});
+    await model.release().catch(() => {});
     model = null;
   }
   post({ type: 'loading', stage: d === 'webgpu' ? 'Starting the voice on your graphics chip' : 'Starting the voice' });
-  model = await StyleTextToSpeech2Model.from_pretrained(MODEL_REPO, {
-    dtype: v === 'fp32' ? 'fp32' : 'q8',
-    device: d,
-    revision: MODEL_REVISION,
-  });
+  threads = threadCount();
+  ort = await loadRuntime(d, { wasmBase: new URL('ort/', baseUrl).href, threads, build: tuning.build });
+  const blob = await store.read(MODEL_FILES[v].path);
+  if (!blob) throw new Error('The voice model is missing. Download it again.');
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  model = await createSession(ort, bytes, d, tuning.session);
   device = d;
   variant = v;
   return performance.now() - t0;
@@ -129,13 +176,14 @@ async function runModel(phonemes: string[], voice: Float32Array): Promise<{ audi
   const n = phonemes.length;
   const offset = 256 * Math.min(Math.max(n, 0), 509);
   const style = voice.slice(offset, offset + 256);
-  const out = (await model({
-    input_ids: new Tensor('int64', ids, [1, ids.length]),
-    style: new Tensor('float32', style, [1, 256]),
-    speed: new Tensor('float32', new Float32Array([1]), [1]),
-  })) as { waveform: Tensor; durations?: Tensor };
+  const out = await model.run({
+    input_ids: new ort!.Tensor('int64', ids, [1, ids.length]),
+    style: new ort!.Tensor('float32', style, [1, 256]),
+    speed: new ort!.Tensor('float32', new Float32Array([1]), [1]),
+  });
   const audio = new Float32Array(out.waveform.data as Float32Array);
   const durations = out.durations ? Array.from(out.durations.data as ArrayLike<number | bigint>, Number) : null;
+  for (const t of Object.values(out)) t.dispose();
   return { audio, durations };
 }
 
@@ -170,8 +218,33 @@ function modelPhonemes(tokens: PhonemeToken[]): { phonemes: string[]; owner: num
   return { phonemes, owner, dropped };
 }
 
+/** Generate one piece of text with a Piper voice (resampled to the app's sample rate). */
+async function synthesizePiper(text: string, v: PiperVoice): Promise<Synth> {
+  const pm = await ensurePiper(v);
+  const g = await g2p.phonemize(text, v.lang);
+  const input = piperInput(g.tokens, v.lang === 'b', pm.config.phoneme_id_map);
+  const textWords = tokenizeWords(text);
+  if (!input.phonemes.length) return { audio: new Float32Array(Math.round(SAMPLE_RATE * 0.1)), timing: { starts: textWords.map(() => 0), ends: textWords.map(() => 0), speechEnd: 0, method: 'proportional' } };
+  const out = await pm.run(input.ids);
+  const audio = resample(out.audio, pm.sampleRate, SAMPLE_RATE);
+  const durations = phonemeDurations(out.frames, input.phonemes.length);
+  const timing =
+    tokenTimings({ words: textWords, tokens: g.tokens, phonemes: input.phonemes, owner: input.owner, durations, samples: audio.length, sampleRate: SAMPLE_RATE }) ??
+    wordTimings({ words: textWords.map((w) => text.slice(w.start, w.end)), phonemes: input.phonemes, durations, samples: audio.length, sampleRate: SAMPLE_RATE });
+  const sane = checkAudio(audio, SAMPLE_RATE, timing.speechEnd);
+  if (!sane.ok) throw new Error(`The voice produced unusable audio (${sane.reason}).`);
+  return { audio, timing };
+}
+
 /** Phonemize and generate one piece of text, splitting it if it exceeds the token limit. */
 async function synthesize(text: string, voiceId: string): Promise<Synth> {
+  const v = voiceById(voiceId);
+  if (isPiper(v)) return synthesizePiper(text, v);
+  await ensureKokoro();
+  return synthesizeKokoro(text, voiceId);
+}
+
+async function synthesizeKokoro(text: string, voiceId: string): Promise<Synth> {
   const v = voiceById(voiceId);
   const voice = await ensureVoice(v.id);
   const g = await g2p.phonemize(text, v.lang);
@@ -222,28 +295,49 @@ async function generateChunk(text: string, voiceId: string, endsWith: ChunkEnd):
 
 async function prepare(choice: ModelChoice, voiceId: string): Promise<void> {
   const plan = planFor(choice);
-  const files = [MODEL_FILES[plan.variant], ...SUPPORT_FILES, { path: voicePath(voiceId), bytes: VOICE_BYTES }];
+  kokoroPlan = plan;
+  const selected = voiceById(voiceId);
+  // Kokoro is always downloaded (it is the main voice); with a Piper voice selected it is only
+  // loaded when a Kokoro voice is used.
+  const kokoroVoice = isPiper(selected) ? DEFAULT_VOICE : selected.id;
+  const files = [MODEL_FILES[plan.variant], ...SUPPORT_FILES, { path: voicePath(kokoroVoice), bytes: VOICE_BYTES }];
   // The G2P data is bundled with the app: load it while the model downloads.
-  const g2pReady = g2p.prepare(voiceById(voiceId).lang);
+  const tStart = performance.now();
+  const g2pReady = g2p.prepare(voiceById(voiceId).lang).then(() => performance.now() - tStart);
   g2pReady.catch(() => {});
   await store.ensure(files, (p) => post({ type: 'download', loaded: p.loaded, total: p.total }));
-  await g2pReady;
+  const tFiles = performance.now() - tStart;
+  const g2pMs = await g2pReady;
   vocab ??= await loadVocab();
+  if (isPiper(selected)) {
+    post({ type: 'loading', stage: 'Starting the voice' });
+    const t1 = performance.now();
+    await ensurePiper(selected);
+    const loadMs = performance.now() - t1;
+    const t0 = performance.now();
+    const test = await synthesize(TEST_SENTENCE, voiceId);
+    const testMs = performance.now() - t0;
+    post({ type: 'ready', device: 'wasm', variant: plan.variant, engine: 'piper', loadMs: Math.round(loadMs), testMs: Math.round(testMs), testRtf: +(test.audio.length / SAMPLE_RATE / (testMs / 1000)).toFixed(3), threads });
+    return;
+  }
   await ensureVoice(voiceId);
   let loadMs = await loadModel(plan.variant, plan.device);
   // Self-test on one short sentence; fall back to WebAssembly if the GPU output is broken.
   post({ type: 'loading', stage: 'Checking the voice' });
   let t0 = performance.now();
+  let test: Synth;
   try {
-    await synthesize(TEST_SENTENCE, voiceId);
+    test = await synthesize(TEST_SENTENCE, voiceId);
   } catch (e) {
     if (device !== 'webgpu') throw e;
     post({ type: 'fallback', from: 'webgpu', to: 'wasm', reason: String((e as Error).message ?? e) });
     loadMs += await loadModel(plan.variant, 'wasm');
     t0 = performance.now();
-    await synthesize(TEST_SENTENCE, voiceId);
+    test = await synthesize(TEST_SENTENCE, voiceId);
   }
-  post({ type: 'ready', device, variant, loadMs: Math.round(loadMs), testMs: Math.round(performance.now() - t0), threads });
+  const testMs = performance.now() - t0;
+  post({ type: 'ready', device, variant, engine: 'kokoro', loadMs: Math.round(loadMs), testMs: Math.round(testMs), testRtf: +(test.audio.length / SAMPLE_RATE / (testMs / 1000)).toFixed(3), threads });
+  console.info(`Narrata engine: files ${Math.round(tFiles)} ms, G2P data ${Math.round(g2pMs)} ms, model ${Math.round(loadMs)} ms, test ${Math.round(testMs)} ms`);
 }
 
 // ---- job queue ----------------------------------------------------------
@@ -336,20 +430,26 @@ async function exportStep(job: ExportJob): Promise<void> {
   }
 }
 
-let baseUrl = '';
+// Messages that arrive while 'init' is still running (it awaits storage) wait for it.
+let initDone: Promise<void> = Promise.resolve();
 
 self.onmessage = async (e: MessageEvent<ToWorker>) => {
   const m = e.data;
   try {
+    if (m.type !== 'init') await initDone;
     switch (m.type) {
       case 'init': {
         baseUrl = m.baseUrl;
-        configureRuntime(baseUrl);
-        [hasWebGPU] = await Promise.all([detectWebGPU(), store.init()]);
+        tuning = m.tuning ?? {};
+        lastChoice = m.choice;
+        const ready = Promise.all([detectWebGPU(), store.init(), piperStore.init()]);
+        initDone = ready.then(() => {}, () => {});
+        [hasWebGPU] = await ready;
         post({ type: 'status', status: status(m.choice) });
         break;
       }
       case 'prepare':
+        lastChoice = m.choice;
         await prepare(m.choice, m.voice);
         post({ type: 'status', status: status(m.choice) });
         break;
@@ -361,10 +461,17 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         playEpoch = Math.max(playEpoch, m.epoch);
         for (let i = genQueue.length - 1; i >= 0; i--) if (genQueue[i].lane === 'play' && genQueue[i].epoch < playEpoch) genQueue.splice(i, 1);
         break;
-      case 'voice':
-        await Promise.all([ensureVoice(m.voice), g2p.prepare(voiceById(m.voice).lang)]);
-        post({ type: 'voice-ready', voice: m.voice });
+      case 'voice': {
+        const v = voiceById(m.voice);
+        try {
+          await Promise.all([isPiper(v) ? ensurePiper(v) : ensureVoice(v.id).then(() => (model || !kokoroPlan ? undefined : ensureKokoro())), g2p.prepare(v.lang)]);
+          post({ type: 'voice-ready', voice: m.voice });
+        } catch (err) {
+          post({ type: 'voice-error', voice: m.voice, message: String((err as Error)?.message ?? err) });
+        }
+        if (isPiper(v)) post({ type: 'status', status: status(lastChoice) });
         break;
+      }
       case 'export':
         exportQueue.push({ ...m, next: 0, samples: 0, pieces: [], cancelled: false });
         void pump();
@@ -375,11 +482,15 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         break;
       }
       case 'clear':
-        if (model) await model.dispose().catch(() => {});
+        if (model) await model.release().catch(() => {});
+        if (piper) await piper.model.release().catch(() => {});
         model = null;
+        piper = null;
+        kokoroPlan = null;
         voices.clear();
         vocab = null;
         await store.clear();
+        await piperStore.init();
         post({ type: 'status', status: status('auto') });
         break;
     }

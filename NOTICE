@@ -22,6 +22,13 @@ Kokoro-82M (https://huggingface.co/hexgrad/Kokoro-82M)
   The ONNX export (onnx-community/Kokoro-82M-v1.0-ONNX-timestamped) is downloaded at runtime,
   not bundled.
 
+Piper voices (https://huggingface.co/rhasspy/piper-voices)
+  The faster voices (Kristin, John and Cori, "medium" quality) are downloaded at runtime when
+  chosen, not bundled. The repository is published under the MIT License. The voices were made by
+  Bryce Beattie from public-domain LibriVox recordings: Kristin and Cori trained from scratch,
+  John fine-tuned from Kristin (see each voice's MODEL_CARD). Piper itself is not included: Narrata runs the voices with ONNX Runtime Web and
+  its own phonemizer, so no part of eSpeak NG is used.
+
 spaCy (https://github.com/explosion/spaCy), version 3.8.16, and en_core_web_sm 3.8.0
   src/engine/g2p/misaki/spacy-rules.ts holds spaCy's English tokenizer rules. The part-of-speech
   tagger in src/engine/g2p/data/tagger.json.gz was trained on public-domain books from Project

@@ -1,13 +1,24 @@
 import type { ChunkEnd } from '../core/chunker';
 import type { Variant } from './model-store';
+import type { SessionTuning } from './runtime';
 
 export type Device = 'webgpu' | 'wasm';
 export type ModelChoice = 'auto' | 'compact';
+
+/** Overrides for measurements (set from URL parameters in debug mode only). */
+export interface Tuning {
+  threads?: number;
+  variant?: Variant;
+  build?: 'wasm' | 'webgpu';
+  session?: SessionTuning;
+}
 
 export interface EngineStatus {
   hasWebGPU: boolean;
   /** Variants whose files are fully stored. */
   stored: Variant[];
+  /** Fast (Piper) voices whose files are stored. */
+  fastVoices: string[];
   plan: { variant: Variant; device: Device; bytes: number; missingBytes: number };
   persistent: boolean;
   storedBytes: number;
@@ -33,7 +44,7 @@ export interface ExportRequest {
 }
 
 export type ToWorker =
-  | { type: 'init'; baseUrl: string; choice: ModelChoice }
+  | { type: 'init'; baseUrl: string; choice: ModelChoice; tuning?: Tuning }
   | { type: 'prepare'; choice: ModelChoice; voice: string }
   | GenRequest
   | { type: 'cancel'; epoch: number }
@@ -60,11 +71,13 @@ export type FromWorker =
   | { type: 'status'; status: EngineStatus }
   | { type: 'download'; loaded: number; total: number }
   | { type: 'loading'; stage: string }
-  | { type: 'ready'; device: Device; variant: Variant; loadMs: number; testMs: number; threads: number }
+  | { type: 'ready'; device: Device; variant: Variant; engine: 'kokoro' | 'piper'; loadMs: number; testMs: number; testRtf: number; threads: number }
   | { type: 'fallback'; from: Device; to: Device; reason: string }
   | GenResult
   | { type: 'gen-error'; id: number; epoch: number; message: string }
   | { type: 'voice-ready'; voice: string }
+  | { type: 'voice-download'; voice: string; loaded: number; total: number }
+  | { type: 'voice-error'; voice: string; message: string }
   | { type: 'export-progress'; id: number; done: number; total: number; seconds: number }
   | { type: 'export-done'; id: number; data: ArrayBuffer; mime: string; ext: string; seconds: number }
   | { type: 'export-error'; id: number; message: string }
