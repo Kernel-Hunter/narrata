@@ -1,25 +1,81 @@
-# Narrata
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/readme/narrata-banner-dark.png">
+  <img alt="Narrata: a free, open-source read-aloud app. The voice runs in your browser and highlights each word as it reads." src="docs/readme/narrata-banner-light.png">
+</picture>
 
-Narrata reads PDFs, EPUBs, web pages and your own text aloud and highlights each word as it is spoken. The voice runs on your computer, in the browser. Nothing you read is uploaded, there is no account, and after a one-time download it works offline.
+<p align="center">
+  <a href="https://kernel-hunter.github.io/narrata/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/readme/open-narrata-dark.png">
+      <img alt="Open Narrata" src="docs/readme/open-narrata-light.png" width="239">
+    </picture>
+  </a>
+</p>
+
+<p align="center">
+  <a href="#chrome-extension">Chrome extension</a> ·
+  <a href="#voices-and-licences">Voices</a> ·
+  <a href="#privacy">Privacy</a> ·
+  <a href="#how-it-works">How it works</a>
+</p>
+
+**Narrata** reads PDFs, EPUBs, web pages and your own text aloud and highlights each word as it is spoken. The voice runs on your computer, in the browser: nothing you read is uploaded, there is no account, and after a one-time download it works offline. It is a free, open-source (MIT) alternative to Speechify, with a web app and a Chrome extension that reads the page you are on.
 
 ![Narrata reading a PDF aloud, with the spoken word highlighted on the page](docs/demo.gif)
 
-It is free and open source (MIT). There is a web app and a Chrome extension that reads the page you are on.
+<p align="center"><sub>A PDF read aloud with the natural voice. The highlight follows the voice word by word.</sub></p>
 
-## What it does
+## Get started
 
-- Opens PDFs (on the original page, or as reflowed text), EPUB books, saved web pages, Markdown and text files, or text you paste.
-- Highlights the word being read and follows it down the page. Click any word to start from there.
-- Speed from 0.5x to 3x. The pitch stays natural.
-- 28 natural voices (American and British English) and 3 fast voices for older computers.
-- Reading font, size and line spacing, including the OpenDyslexic font. Light and dark themes.
-- Remembers where you stopped in every document.
-- Exports a document as an audio file (.m4a, or .wav where the browser cannot encode AAC).
-- Keyboard shortcuts, media keys and lock screen controls. Can be installed as an app.
+**Web app:** open [kernel-hunter.github.io/narrata](https://kernel-hunter.github.io/narrata/). Pick a voice, then try the sample, open a file or paste text. Nothing to install, though the browser can install it as an app.
 
-## First run
+**Chrome extension:** not in the Chrome Web Store yet. [Load it from the source](#chrome-extension) in a few steps.
+
+<details>
+<summary>Run it from the source</summary>
+
+Requires Node.js 22 or newer and pnpm.
+
+```sh
+pnpm install
+pnpm dev    # http://localhost:5330
+```
+
+See [Development](#development) for the other commands.
+
+</details>
+
+## Features
+
+- **Word highlighting.** The word being read is highlighted and the page follows it. Click any word to start from there.
+- **PDFs, EPUBs and web pages.** PDFs (on the original page, or as reflowed text), EPUB books, saved web pages, Markdown and text files, or text you paste.
+- **Voices that run on your device.** 28 natural voices (American and British English) and 3 fast voices for older computers.
+- **Speed from 0.5x to 3x.** The pitch stays natural.
+- **Reading settings.** Reading font, size and line spacing, including the OpenDyslexic font. Light and dark themes.
+- **Remembers your place.** Every document opens where you stopped.
+- **Audio export.** Saves a document as an audio file (.m4a, or .wav where the browser cannot encode AAC).
+- **Keyboard and media keys.** Keyboard shortcuts, media keys and lock screen controls. Can be installed as an app.
+
+## How it compares
+
+Speechify's column comes from its [pricing page](https://speechify.com/pricing/), checked on 30 October 2026.
+
+| | Narrata | Speechify |
+| --- | --- | --- |
+| Price | Free | Free plan; Premium $139 a year or $29 a month |
+| Voices | 28 natural and 3 fast, English only | Free: 10 "robotic sounding" voices. Premium: 1000+ natural voices, 60+ languages |
+| Speed | Up to 3x | Up to 1.5x free, 5x Premium |
+| Where it runs | Web app, Chrome extension (load unpacked for now) | iPhone, iPad, Android, Mac, Windows, web, Chrome and Edge extensions |
+| AI summaries and chat | No | Premium |
+| Source code | Open, MIT | Closed |
+
+Speechify covers far more languages and devices. Narrata reads English only and runs on a computer, but it is free and your documents stay on that computer.
+
+## Voices and licences
 
 Before anything is downloaded, Narrata asks which voice you want:
+
+![The first-run voice choice: natural voice, 178 MB, or fast voice, 64 MB, with a speed test recommendation](docs/readme/voice-choice.png)
 
 | | Natural voice | Fast voice |
 | --- | --- | --- |
@@ -32,12 +88,6 @@ It suggests one based on a quick look at your computer: the number of cores, the
 
 If the natural voice turns out to be too slow while reading, Narrata offers once to switch to the fast voice.
 
-## Privacy
-
-Everything runs in your browser. The app downloads the voice you choose from Hugging Face the first time (and the other voice only if you pick it later). Apart from that it makes no network requests of its own: no analytics, no server, no account. Your documents, reading positions and settings stay in the browser's storage (IndexedDB, local storage and the Origin Private File System) and are never uploaded. Clearing the site data in your browser, or **Remove voice data** under More, About and storage, deletes them.
-
-## Voices and licences
-
 | Voice | Licence | Notes |
 | --- | --- | --- |
 | Kokoro-82M, 28 English voices | Apache-2.0 | Run from the [ONNX export with word timestamps](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX-timestamped), downloaded at runtime. |
@@ -46,24 +96,15 @@ Everything runs in your browser. The app downloads the voice you choose from Hug
 
 Most other Piper voices are fine-tuned from the "lessac" voice, whose recordings are licensed for non-commercial research only, so they are not offered. Piper normally needs eSpeak NG (GPL) to turn text into phonemes; Narrata uses its own phonemizer (a TypeScript port of misaki), so no eSpeak code or data is included. Narrata itself is MIT; see [NOTICE](NOTICE) for everything it includes.
 
-## Browser support
+## Privacy
 
-What was checked for this release (30 October 2026, macOS 27 on an Apple M5 laptop), and how:
-
-| Browser | What was checked | Result |
-| --- | --- | --- |
-| Chrome for Testing 156 (Playwright) | Web app production build: natural voice on the processor, PDF page view with highlighting (the demo above), speed test calibration. Extension: the automated checks in `tests/e2e/verify-ext.mjs` and the first-run choice with a fresh profile. | Works. In the extension the natural voice ran on the graphics chip at 6.1x real time. |
-| Chromium 152 (an Electron-based embedded browser) | Web app, development server and production build served from `/narrata/` by a server that sends no isolation headers: first-run choice, fast voice download and reading, switching to a natural voice (download while the fast voice reads), a simulated graphics chip failure, Remove voice data. | Works. The service worker made the page cross-origin isolated (4 threads); WebGPU was detected. |
-| Safari 27 | Not tested: automating it needs a Safari setting changed. | Unknown. |
-| Firefox, Edge, Chrome on Windows, Linux or Android | Not tested for this release. | Unknown. Edge uses the same engine as Chrome. |
-
-If you try one of the untested browsers, an issue saying whether it worked (and which voice and device the About dialog shows) helps.
-
-Narrata needs WebAssembly with SIMD. Several processor threads need cross-origin isolation, which the app's service worker provides on any static host, so it is not something you need to configure.
+Everything runs in your browser. The app downloads the voice you choose from Hugging Face the first time (and the other voice only if you pick it later). Apart from that it makes no network requests of its own: no analytics, no server, no account. Your documents, reading positions and settings stay in the browser's storage (IndexedDB, local storage and the Origin Private File System) and are never uploaded. Clearing the site data in your browser, or **Remove voice data** under More, About and storage, deletes them.
 
 ## Chrome extension
 
 The extension reads web pages where they are, highlights the word being spoken on the page and tints the sentence. It uses the same voices as the web app, running inside the extension.
+
+![Reading an article with the extension: the current word and sentence are highlighted on the page, with the floating player in the corner](docs/screenshots/ext-reading.png)
 
 It is not in the Chrome Web Store yet. To install it from the source:
 
@@ -80,8 +121,6 @@ What it does:
 - The floating player has play and pause, previous and next sentence, speed and voice. Alt+Shift+P plays or pauses from anywhere. Shortcuts can be changed at `chrome://extensions/shortcuts`.
 - Chrome does not let extensions read its own pages, the Web Store, or PDFs in its built-in PDF viewer. For PDFs and EPUBs, use the web app.
 
-![Reading an article with the extension](docs/screenshots/ext-reading.png)
-
 | Permission | Why |
 | --- | --- |
 | `activeTab` | Read the page you are on, only after you click the button, use a shortcut or the right-click menu. |
@@ -92,9 +131,37 @@ What it does:
 
 There are no host permissions. The extension's content security policy allows network connections only to Hugging Face, for the voice download.
 
+## Browser support
+
+What was checked for this release (30 October 2026, macOS 27 on an Apple M5 laptop), and how:
+
+| Browser | Result |
+| --- | --- |
+| Chrome for Testing 156 (Playwright) | Works. In the extension the natural voice ran on the graphics chip at 6.1x real time. |
+| Chromium 152 (an Electron-based embedded browser) | Works. The service worker made the page cross-origin isolated (4 threads); WebGPU was detected. |
+| Safari 27 | Unknown. Not tested: automating it needs a Safari setting changed. |
+| Firefox, Edge, Chrome on Windows, Linux or Android | Unknown. Not tested for this release. Edge uses the same engine as Chrome. |
+
+<details>
+<summary>What was checked in each browser</summary>
+
+- **Chrome for Testing 156 (Playwright).** Web app production build: natural voice on the processor, PDF page view with highlighting (the demo above), speed test calibration. Extension: the automated checks in `tests/e2e/verify-ext.mjs` and the first-run choice with a fresh profile.
+- **Chromium 152 (an Electron-based embedded browser).** Web app, development server and production build served from `/narrata/` by a server that sends no isolation headers: first-run choice, fast voice download and reading, switching to a natural voice (download while the fast voice reads), a simulated graphics chip failure, Remove voice data.
+
+</details>
+
+If you try one of the untested browsers, an issue saying whether it worked (and which voice and device the About dialog shows) helps.
+
+Narrata needs WebAssembly with SIMD. Several processor threads need cross-origin isolation, which the app's service worker provides on any static host, so it is not something you need to configure.
+
 ## Slower computers
 
-How fast the natural voice runs depends on the computer. On an Apple M5 laptop it generates about 7 seconds of speech per second on the graphics chip, and 2 to 2.5 seconds per second on the processor with 4 threads. Measured with `scripts/bench/cpu-bench.mjs`, with the browser slowed down by the operating system to emulate slower computers, reading the three-paragraph sample (about a minute of speech) at 1x on the processor:
+How fast the natural voice runs depends on the computer. On an Apple M5 laptop it generates about 7 seconds of speech per second on the graphics chip, and 2 to 2.5 seconds per second on the processor with 4 threads. Below about 1x real time the natural voice cannot keep up with playback however much audio is buffered, and that is where the fast voice helps.
+
+<details>
+<summary>Measurements on emulated slower computers</summary>
+
+Measured with `scripts/bench/cpu-bench.mjs`, with the browser slowed down by the operating system to emulate slower computers, reading the three-paragraph sample (about a minute of speech) at 1x on the processor:
 
 | Emulated computer | Natural voice speed | Wait before audio | Pauses | Fast voice speed |
 | --- | --- | --- | --- | --- |
@@ -104,7 +171,9 @@ How fast the natural voice runs depends on the computer. On an Apple M5 laptop i
 | 6 times slower | 0.34x | 10 s | 7 (111 s in all) | 3.7x |
 | 17 times slower | 0.12x | 15 s | 7 (401 s in all) | 1.2x |
 
-Below about 1x real time the natural voice cannot keep up with playback however much audio is buffered, and that is where the fast voice helps. The emulation slows every core equally, so a real computer with more, slower cores may do better than the table suggests.
+The emulation slows every core equally, so a real computer with more, slower cores may do better than the table suggests.
+
+</details>
 
 What the player does on a slow computer:
 
@@ -131,15 +200,22 @@ pnpm dev              # http://localhost:5330
 pnpm test             # unit tests (Vitest)
 pnpm typecheck        # tsc --noEmit
 pnpm build            # production build in dist/
-pnpm preview          # serve dist/ on http://localhost:5331
-pnpm build:ext        # browser extension in dist-ext/
-pnpm build:ext:test   # extension with hooks for automated checks, in dist-ext-test/
-pnpm audit:licenses   # licences of everything the builds contain; fails on GPL, LGPL or AGPL
+pnpm preview          # serve dist/ on :5331
+pnpm build:ext        # extension in dist-ext/
+pnpm build:ext:test   # extension with test hooks
+pnpm audit:licenses   # fails on GPL, LGPL or AGPL
 ```
+
+`pnpm build:ext:test` builds the extension with hooks for automated checks, in `dist-ext-test/`. `pnpm audit:licenses` checks the licences of everything the builds contain.
 
 The production build uses relative paths, so `dist/` can be served from any path, such as `https://<user>.github.io/narrata/`. `.github/workflows/pages.yml` builds it and deploys it to GitHub Pages; `.github/workflows/ci.yml` runs the tests, type check, both builds and the licence audit on every push and pull request.
 
-Measurement scripts (macOS, Playwright's Chromium, `pnpm exec playwright install chromium` once):
+The G2P data in `src/engine/g2p/data/` is generated by the scripts in `scripts/g2p/`; each one explains its inputs at the top. `pnpm dev` and `pnpm build` copy the ONNX Runtime and pdf.js runtime files into `public/`, so the app never loads code from a CDN.
+
+<details>
+<summary>Measurement scripts</summary>
+
+macOS, Playwright's Chromium (`pnpm exec playwright install chromium` once):
 
 - `node scripts/bench/cpu-bench.mjs` measures the processor path under emulated slower computers: speed, time to first audio and pauses. Chrome's CPU throttling does not slow down Web Workers, so the script slows the browser's processes with the operating system instead.
 - `node scripts/bench/device-check.mjs` checks the first-run speed test against the measured speed of the natural voice at the same emulated speeds.
@@ -147,21 +223,38 @@ Measurement scripts (macOS, Playwright's Chromium, `pnpm exec playwright install
 - `node scripts/bench/record-demo.mjs` records `docs/demo.gif` (needs ffmpeg).
 - `node tests/e2e/verify-ext.mjs` loads `dist-ext-test/` into Chromium and checks reading, highlighting, speed, controls, selections, frames and restricted pages.
 
-The G2P data in `src/engine/g2p/data/` is generated by the scripts in `scripts/g2p/`; each one explains its inputs at the top. `pnpm dev` and `pnpm build` copy the ONNX Runtime and pdf.js runtime files into `public/`, so the app never loads code from a CDN.
+</details>
+
+<details>
+<summary>Project layout</summary>
 
 ```
-src/core/      text model, sentence splitting and chunking, word alignment, timing, device decisions
-src/docs/      readers for text, Markdown, HTML, EPUB and PDF
-src/engine/    TTS worker, model storage (OPFS), device check, text to phonemes (g2p/), voices, Piper, export
-src/audio/     playback engine and audio cache
-src/ui/        reading views, player bar, menus and dialogs
-src/store/     library (IndexedDB) and settings
-src/pwa/       service worker and registration
-extension/     browser extension: manifest, service worker, offscreen document, content script, popup
-tests/         unit tests, fixtures and extension checks
+src/core/    text model, sentence splitting
+             and chunking, word alignment,
+             timing, device decisions
+src/docs/    readers for text, Markdown,
+             HTML, EPUB and PDF
+src/engine/  TTS worker, model storage
+             (OPFS), device check, text to
+             phonemes (g2p/), voices, Piper,
+             export
+src/audio/   playback engine and audio cache
+src/ui/      reading views, player bar,
+             menus and dialogs
+src/store/   library (IndexedDB) and settings
+src/pwa/     service worker and registration
+extension/   browser extension: manifest,
+             service worker, offscreen
+             document, content script, popup
+tests/       unit tests, fixtures and
+             extension checks
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) to send a change and [SECURITY.md](SECURITY.md) to report a security problem.
+</details>
+
+## Contributing
+
+Bug reports, fixes and small improvements are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to send a change and [SECURITY.md](SECURITY.md) to report a security problem.
 
 ## Credits
 

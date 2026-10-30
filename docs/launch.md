@@ -1,6 +1,6 @@
 # Launch drafts
 
-Drafts for announcing Narrata. Nothing here has been posted. Where a draft needs a personal reason for building it, there is a note in brackets: write that part yourself, in your own words, rather than posting a made-up motivation. Replace `<URL>` with the GitHub Pages address and `<REPO>` with the repository link once they exist. Numbers come from the README and the benchmarks in `scripts/bench/`; check them again before posting if the code changed.
+Drafts for announcing Narrata. Nothing here has been posted. Where a draft needs a personal reason for building it, there is a note in brackets: write that part yourself, in your own words, rather than posting a made-up motivation. Numbers come from the README and the benchmarks in `scripts/bench/`; check them again before posting if the code changed.
 
 ## Show HN
 
@@ -24,10 +24,10 @@ Text:
 >
 > There is also a Chrome extension that reads the page you are on and highlights it in place. It is not in the Web Store yet; it can be loaded unpacked from the repository.
 >
-> Known limits: English only for now. Chrome and Edge are what I tested most; Safari and Firefox are listed in the README with what I checked. On older laptops the natural voice may pause, which is what the fast voice is for.
+> Known limits: English only for now. I tested it in Chrome and Chromium; the README lists each browser and what I checked. Safari, Firefox and Edge are untested so far. On older laptops the natural voice may pause, which is what the fast voice is for.
 >
-> App: <URL>
-> Code: <REPO>
+> App: https://kernel-hunter.github.io/narrata/
+> Code: https://github.com/Kernel-Hunter/narrata
 
 ## X (each post 280 characters or fewer; X counts a link as 23)
 
@@ -35,7 +35,7 @@ Main post (242 characters with the link):
 
 > Narrata reads PDFs, EPUBs and web pages aloud and highlights each word. The voice model runs in your browser, so nothing you read leaves your computer. Free, open source (MIT), works offline after a one-time download.
 >
-> <URL>
+> https://kernel-hunter.github.io/narrata/
 
 Follow-up (229 characters):
 
@@ -45,13 +45,13 @@ Follow-up (181 characters with the link):
 
 > There is also a Chrome extension that reads the page you are on and highlights the words in place. Not in the Web Store yet; load it unpacked from the repo.
 >
-> <REPO>
+> https://github.com/Kernel-Hunter/narrata
 
 ## Bluesky (300 characters max)
 
 > Narrata reads PDFs, EPUBs and web pages aloud with word-by-word highlighting. The voice model runs in your browser: no server, no account, nothing uploaded. Works offline after a one-time download. MIT licensed.
 >
-> <URL>
+> https://kernel-hunter.github.io/narrata/
 
 Follow-up:
 
@@ -79,9 +79,9 @@ Text:
 > - Does it read your kind of documents well (school PDFs, scanned pages, ebooks)?
 > - What is missing compared to what you use now?
 >
-> It works best in Chrome or Edge on a computer. The first time, it downloads a voice (64 or 178 MB) and then works offline.
+> It is tested in Chrome on a computer. The first time, it downloads a voice (64 or 178 MB) and then works offline.
 >
-> <URL>
+> https://kernel-hunter.github.io/narrata/
 
 ### r/ADHD
 
@@ -97,11 +97,11 @@ Text:
 >
 > [One sentence on why you built it, if it is true for you.] Narrata reads PDFs, EPUBs, web pages and pasted text, highlights the current word, and lets you speed it up to 3x without the chipmunk voice. It remembers where you stopped in each document.
 >
-> The voice runs on your computer, so nothing you read is uploaded. It works best in Chrome or Edge on a laptop or desktop.
+> The voice runs on your computer, so nothing you read is uploaded. It is tested in Chrome on a laptop or desktop.
 >
 > If you try it, I would like to hear what gets in the way: too many settings, the voice, the speed, anything.
 >
-> <URL>
+> https://kernel-hunter.github.io/narrata/
 
 ### r/students
 
@@ -119,7 +119,7 @@ Text:
 >
 > Feedback on what breaks with your course PDFs is the most useful thing for me right now.
 >
-> <URL>
+> https://kernel-hunter.github.io/narrata/
 
 ## Product Hunt
 
@@ -172,7 +172,7 @@ Long description:
 > Limits
 > English only. Chrome does not let extensions read its own pages, the Web Store, or PDFs in its built-in viewer; for PDFs and ebooks, use the Narrata web app.
 >
-> Narrata is free and open source under the MIT License: <REPO>
+> Narrata is free and open source under the MIT License: https://github.com/Kernel-Hunter/narrata
 
 ### Privacy practices tab
 
@@ -205,4 +205,4 @@ Certifications (all three apply):
 - I do not use or transfer user data for purposes that are unrelated to my item's single purpose.
 - I do not use or transfer user data to determine creditworthiness or for lending purposes.
 
-Privacy policy URL: the store requires one even when no data is collected. Point it at the Privacy section of the README (`<REPO>#privacy`) or publish a short page that says the same.
+Privacy policy URL: the store requires one even when no data is collected. Point it at the Privacy section of the README (https://github.com/Kernel-Hunter/narrata#privacy) or publish a short page that says the same.
