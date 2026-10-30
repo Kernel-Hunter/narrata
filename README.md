@@ -15,8 +15,7 @@
 <p align="center">
   <a href="#chrome-extension">Chrome extension</a> ·
   <a href="#voices-and-licences">Voices</a> ·
-  <a href="#privacy">Privacy</a> ·
-  <a href="#how-it-works">How it works</a>
+  <a href="#privacy">Privacy</a>
 </p>
 
 **Narrata** reads PDFs, EPUBs, web pages and your own text aloud and highlights each word as it is spoken. The voice runs on your computer, in the browser: nothing you read is uploaded, there is no account, and after a one-time download it works offline. It is a free, open-source (MIT) alternative to Speechify, with a web app and a Chrome extension that reads the page you are on.
@@ -38,10 +37,10 @@ Requires Node.js 22 or newer and pnpm.
 
 ```sh
 pnpm install
-pnpm dev    # http://localhost:5330
+pnpm dev
 ```
 
-See [Development](#development) for the other commands.
+Then open http://localhost:5330. See [Development](#development) for the other commands.
 
 </details>
 
