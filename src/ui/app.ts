@@ -856,6 +856,25 @@ export class App {
     this.schedulePositionSave(word.start);
   }
 
+  /**
+   * Before a reload into a new version: pauses and saves the reading position now (it is
+   * otherwise saved a moment after each word). Returns false while a voice is downloading, so
+   * the download is not cut off.
+   */
+  async prepareReload(): Promise<boolean> {
+    const info = this.tts.info;
+    if (info.state === 'downloading' || info.voiceDownload) {
+      toast('Reload when the voice download has finished.');
+      return false;
+    }
+    this.player.pause();
+    clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
+    const meta = this.doc?.meta;
+    if (meta && this.player.state !== 'ended') await this.library.savePosition(meta.id, this.player.currentOffset()).catch(() => null);
+    return true;
+  }
+
   private schedulePositionSave(offset: number) {
     const meta = this.doc?.meta;
     if (!meta || this.saveTimer) return;

@@ -1,0 +1,47 @@
+# On a version tag (v0.2.0), builds the extension and attaches it to the GitHub release as
+# narrata-extension-<version>.zip, so people can install or update it without building it.
+# The version lives in package.json; the build copies it into the manifest, and the tag must match.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check the tag matches package.json
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - run: pnpm test
+      - run: pnpm build:ext
+      - run: pnpm audit:licenses
+      - name: Zip the extension
+        run: |
+          test "$(node -p "require('./dist-ext/manifest.json').version")" = "$VERSION"
+          (cd dist-ext && zip -qr "../narrata-extension-$VERSION.zip" .)
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "narrata-extension-$VERSION.zip" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "narrata-extension-$VERSION.zip" --title "$GITHUB_REF_NAME" --generate-notes
+          fi

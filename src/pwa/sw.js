@@ -20,6 +20,7 @@ const abs = (p) => new URL(p, self.registration.scope).href;
 const revByUrl = new Map(Object.entries(REVS).map(([p, r]) => [abs(p), r]));
 const assetsPrefix = abs('./assets/');
 const appUrls = new Set([abs('./'), abs('./index.html')]);
+const versionUrl = abs('./version.json');
 /** URL without query or fragment, the key files are cached under. */
 const keyOf = (url) => {
   const u = new URL(url);
@@ -211,5 +212,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (req.cache === 'only-if-cached' && req.mode !== 'same-origin') return;
+  // The page checks this file for a newer deploy, so it always comes from the network.
+  if (keyOf(req.url) === versionUrl) return;
   event.respondWith(req.mode === 'navigate' ? navigate(req) : asset(req, event));
 });

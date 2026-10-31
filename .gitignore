@@ -8,6 +8,7 @@ public/pdfjs
 dist-ext
 dist-ext-test
 .e2e-profile*
+.e2e-update-site
 narrata-e2e-*.json
 __pycache__
 .bench-profile

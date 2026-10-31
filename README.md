@@ -28,7 +28,7 @@
 
 **Web app:** open [kernel-hunter.github.io/narrata](https://kernel-hunter.github.io/narrata/). Pick a voice, then try the sample, open a file or paste text. Nothing to install, though the browser can install it as an app.
 
-**Chrome extension:** not in the Chrome Web Store yet. [Load it from the source](#chrome-extension) in a few steps.
+**Chrome extension:** not in the Chrome Web Store yet. [Download it from the releases and load it](#chrome-extension) in a few steps.
 
 <details>
 <summary>Run it from the source</summary>
@@ -97,7 +97,7 @@ Most other Piper voices are fine-tuned from the "lessac" voice, whose recordings
 
 ## Privacy
 
-Everything runs in your browser. The app downloads the voice you choose from Hugging Face the first time (and the other voice only if you pick it later). Apart from that it makes no network requests of its own: no analytics, no server, no account. Your documents, reading positions and settings stay in the browser's storage (IndexedDB, local storage and the Origin Private File System) and are never uploaded. Clearing the site data in your browser, or **Remove voice data** under More, About and storage, deletes them.
+Everything runs in your browser. The app downloads the voice you choose from Hugging Face the first time (and the other voice only if you pick it later). While it is open, it also checks the site it was loaded from for a newer version (a small `version.json` file), and offers to reload when there is one. Apart from that it makes no network requests of its own: no analytics, no server, no account. Your documents, reading positions and settings stay in the browser's storage (IndexedDB, local storage and the Origin Private File System) and are never uploaded. Clearing the site data in your browser, or **Remove voice data** under More, About and storage, deletes them.
 
 ## Chrome extension
 
@@ -105,12 +105,21 @@ The extension reads web pages where they are, highlights the word being spoken o
 
 ![Reading an article with the extension: the current word and sentence are highlighted on the page, with the floating player in the corner](docs/screenshots/ext-reading.png)
 
-It is not in the Chrome Web Store yet. To install it from the source:
+It is not in the Chrome Web Store yet. To install it:
 
-1. Install [Node.js](https://nodejs.org/) 22 or newer and [pnpm](https://pnpm.io/installation).
-2. Run `pnpm install` and then `pnpm build:ext` in this folder.
-3. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the `dist-ext` folder.
-4. On an article, click the Narrata button and choose **Read this page**, or press Alt+Shift+R. The first time, the player asks which voice to download.
+1. Download `narrata-extension-<version>.zip` from the [latest release](https://github.com/Kernel-Hunter/narrata/releases/latest) and unzip it into a folder you will keep.
+2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick that folder.
+3. On an article, click the Narrata button and choose **Read this page**, or press Alt+Shift+R. The first time, the player asks which voice to download.
+
+To build it yourself instead, install [Node.js](https://nodejs.org/) 22 or newer and [pnpm](https://pnpm.io/installation), run `pnpm install` and then `pnpm build:ext` in this folder, and load the `dist-ext` folder.
+
+**Updating.** Chrome does not update extensions loaded this way. When a new version is out, the Narrata popup says so. To update:
+
+1. Download the new zip from the release page.
+2. Unzip it and copy its files over your Narrata folder.
+3. In `chrome://extensions`, click the reload button on Narrata.
+
+Keep the same folder. Chrome ties an unpacked extension to its folder, so loading a different one, or removing the extension, starts over without your settings and the downloaded voice.
 
 What it does:
 
@@ -128,7 +137,7 @@ What it does:
 | `storage` | Remember your speed, voice and model choice. |
 | `contextMenus` | The right-click entries. |
 
-There are no host permissions. The extension's content security policy allows network connections only to Hugging Face, for the voice download.
+There are no host permissions. The extension's content security policy allows network connections only to Hugging Face, for the voice download, and to `api.github.com`, where the popup checks for a newer release at most once a day. The request sends nothing about what you read.
 
 ## Browser support
 
@@ -205,9 +214,11 @@ pnpm build:ext:test   # extension with test hooks
 pnpm audit:licenses   # fails on GPL, LGPL or AGPL
 ```
 
-`pnpm build:ext:test` builds the extension with hooks for automated checks, in `dist-ext-test/`. `pnpm audit:licenses` checks the licences of everything the builds contain.
+`pnpm build:ext:test` builds the extension with hooks for automated checks, in `dist-ext-test/`. `node tests/e2e/verify-update.mjs` checks the web app's update notice against a local copy served the way GitHub Pages serves it, and `node tests/e2e/verify-ext-update.mjs` checks the one in the extension popup. `pnpm audit:licenses` checks the licences of everything the builds contain.
 
 The production build uses relative paths, so `dist/` can be served from any path, such as `https://<user>.github.io/narrata/`. `.github/workflows/pages.yml` builds it and deploys it to GitHub Pages; `.github/workflows/ci.yml` runs the tests, type check, both builds and the licence audit on every push and pull request.
+
+The version lives in `package.json`; `pnpm build:ext` copies it into the extension manifest. To publish the extension, bump it, then push a matching tag (`v0.2.0`): `.github/workflows/release.yml` builds the extension and attaches `narrata-extension-<version>.zip` to the GitHub release.
 
 The G2P data in `src/engine/g2p/data/` is generated by the scripts in `scripts/g2p/`; each one explains its inputs at the top. `pnpm dev` and `pnpm build` copy the ONNX Runtime and pdf.js runtime files into `public/`, so the app never loads code from a CDN.
 

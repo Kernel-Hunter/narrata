@@ -36,6 +36,8 @@ jobs:
       - run: pnpm build
       - name: Check the service worker is in the build
         run: test -f dist/sw.js && grep -q "Cross-Origin-Embedder-Policy" dist/sw.js
+      - name: Check the build id is in index.html and version.json
+        run: grep -q "\"build\":\"$(grep -o 'narrata-build" content="[0-9a-f]*' dist/index.html | cut -d'"' -f3)\"" dist/version.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

@@ -1,7 +1,8 @@
 import './styles/app.css';
 import { onIsolationReady, registerServiceWorker, reloadForIsolation } from './pwa/register';
+import { reloadForUpdate, watchForUpdates } from './pwa/update';
 import { App } from './ui/app';
-import { toast } from './ui/overlay';
+import { notice, toast } from './ui/overlay';
 
 const root = document.getElementById('app')!;
 
@@ -12,6 +13,18 @@ async function boot() {
   const app = new App(root);
   // The first install took very long and the app started single-threaded: offer the reload.
   onIsolationReady(() => toast('Narrata is ready to use all processor cores.', { action: 'Reload', onAction: reloadForIsolation, ms: 60_000 }));
+  // A newer version was deployed while this page was open. Reload only when asked, so playback
+  // is never cut off; the document and the reading position are saved first.
+  watchForUpdates(() =>
+    notice('Narrata was updated. Reload to get the new version.', {
+      action: 'Reload',
+      className: 'update-notice',
+      onAction: async () => {
+        if (!(await app.prepareReload())) return false;
+        await reloadForUpdate();
+      },
+    }),
+  );
   // Files opened with the installed app ("Open with Narrata").
   const lq = (window as unknown as { launchQueue?: { setConsumer(cb: (p: { files: FileSystemFileHandle[] }) => void): void } }).launchQueue;
   lq?.setConsumer(async (params) => {

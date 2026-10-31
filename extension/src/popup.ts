@@ -1,4 +1,5 @@
-// Toolbar popup: what is happening on this page, the voice download, shortcuts and privacy.
+// Toolbar popup: a new version if there is one, what is happening on this page, the voice
+// download, shortcuts and privacy.
 
 import type { EngineInfo } from '../../src/engine/client';
 import { downloadSize } from '../../src/engine/model-store';
@@ -6,6 +7,7 @@ import { icons, logo } from '../../src/ui/icons';
 import { choiceHtml, isFirstRun } from './choice';
 import { WEB_APP_URL } from './config';
 import { type PopupEvent, type PopupRequest, type PopupStatus, envelope, isEnvelope } from './protocol';
+import { type Release, availableUpdate } from './update';
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const mb = (n: number) => `${Math.round(n / 1e6)} MB`;
@@ -106,6 +108,26 @@ async function refresh() {
   void renderEngine(s.engine);
 }
 
+/** The extension cannot update itself when loaded unpacked, so say how. */
+function renderUpdate(release: Release) {
+  const box = $('#update');
+  const zip = `narrata-extension-${release.version}.zip`;
+  box.innerHTML = `<h2>Update available: v${release.version}</h2>
+<ol><li>Download <strong>${zip}</strong> from the release page.</li><li>Unzip it and copy the files over your Narrata folder. Keep the same folder, so the voice stays downloaded.</li><li>In <a href="#" id="extensions-link">chrome://extensions</a>, click the reload button on Narrata.</li></ol>
+<a class="btn" id="release-link" target="_blank" rel="noopener">${icons.download}<span>Open the release page</span></a>`;
+  $('#release-link').setAttribute('href', release.url);
+  $('#extensions-link').onclick = (e) => {
+    e.preventDefault();
+    void chrome.tabs.create({ url: 'chrome://extensions' });
+  };
+  box.hidden = false;
+}
+
+async function checkForUpdate() {
+  const release = await availableUpdate(chrome.runtime.getManifest().version, chrome.storage.local).catch(() => null);
+  if (release) renderUpdate(release);
+}
+
 async function shortcuts() {
   const list = await chrome.commands.getAll();
   const names: Record<string, string> = { 'read-page': 'Read this page', 'read-selection': 'Read selection', 'toggle-reading': 'Play or pause' };
@@ -136,6 +158,7 @@ async function init() {
   const forced = Number(new URLSearchParams(location.search).get('tab'));
   const [tab] = forced ? [] : await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = forced || (tab?.id ?? -1);
+  void checkForUpdate();
   await Promise.all([refresh(), shortcuts()]);
   setInterval(refresh, 1500);
 }
