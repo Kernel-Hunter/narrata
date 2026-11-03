@@ -784,6 +784,14 @@ dialog.sheet[open] { animation: pop-in 0.2s var(--ease); }
   background: var(--paper);
   margin-bottom: 10px;
 }
+.pron-form { margin: 0; }
+.pron-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.pron-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.pron-list { list-style: none; margin: 18px 0 0; padding: 6px 0 0; border-top: 1px solid var(--line); max-height: min(320px, 40dvh); overflow-y: auto; }
+.pron-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+.pron-word { flex: 0 1 38%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.sheet .pron-row input[type='text'] { flex: 1 1 auto; min-width: 0; width: auto; height: 38px; margin: 0; }
+.pron-row .icon-btn { flex: none; }
 .kbd-list { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; margin: 0; }
 .kbd-list dt { text-align: right; }
 .kbd-list dd { margin: 0; color: var(--ink-2); }
@@ -881,6 +889,8 @@ kbd {
   .pdf-view { gap: 10px; }
   .pdf-page { border-radius: 3px; }
   .doc-delete { opacity: 1; }
+  .pron-fields { grid-template-columns: 1fr; }
+  .pron-word { flex-basis: 34%; white-space: normal; overflow-wrap: anywhere; }
 }
 
 @media (prefers-reduced-motion: reduce) {
