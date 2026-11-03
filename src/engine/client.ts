@@ -3,6 +3,7 @@
 import type { ChunkEnd } from '../core/chunker';
 import type { DeviceProbe } from '../core/device';
 import type { Device, EngineStatus, FromWorker, GenResult, ModelChoice, ToWorker, Tuning } from './protocol';
+import type { Pronunciation } from './g2p/pronunciations';
 import type { Variant } from './model-store';
 
 export type EngineState = 'starting' | 'needs-download' | 'downloading' | 'loading' | 'ready' | 'error';
@@ -217,6 +218,11 @@ export class TtsClient {
         x?.reject(new Error('cancelled'));
       },
     };
+  }
+
+  /** Use this pronunciation list for everything generated from now on. */
+  setPronunciations(list: Pronunciation[]) {
+    this.send({ type: 'pronunciations', list });
   }
 
   clearModels() {

@@ -49,6 +49,7 @@ Then open http://localhost:5330. See [Development](#development) for the other c
 - **Word highlighting.** The word being read is highlighted and the page follows it. Click any word to start from there.
 - **PDFs, EPUBs and web pages.** PDFs (on the original page, or as reflowed text), EPUB books, saved web pages, Markdown and text files, or text you paste.
 - **Voices that run on your device.** 28 natural voices (American and British English) and 3 fast voices for older computers.
+- **Pronunciations.** Teach it how to say a name or a term by writing it the way it sounds ("Siobhan" as "shiv awn"). The list applies to every document, voice and audio export in the web app.
 - **Speed from 0.5x to 3x.** The pitch stays natural.
 - **Reading settings.** Reading font, size and line spacing, including the OpenDyslexic font. Light and dark themes.
 - **Remembers your place.** Every document opens where you stopped.
@@ -97,7 +98,7 @@ Most other Piper voices are fine-tuned from the "lessac" voice, whose recordings
 
 ## Privacy
 
-Everything runs in your browser. The app downloads the voice you choose from Hugging Face the first time (and the other voice only if you pick it later). While it is open, it also checks the site it was loaded from for a newer version (a small `version.json` file), and offers to reload when there is one. Apart from that it makes no network requests of its own: no analytics, no server, no account. Your documents, reading positions and settings stay in the browser's storage (IndexedDB, local storage and the Origin Private File System) and are never uploaded. Clearing the site data in your browser, or **Remove voice data** under More, About and storage, deletes them.
+Everything runs in your browser. The app downloads the voice you choose from Hugging Face the first time (and the other voice only if you pick it later). While it is open, it also checks the site it was loaded from for a newer version (a small `version.json` file), and offers to reload when there is one. Apart from that it makes no network requests of its own: no analytics, no server, no account. Your documents, reading positions, settings and pronunciation list stay in the browser's storage (IndexedDB, local storage and the Origin Private File System) and are never uploaded. Clearing the site data in your browser, or **Remove voice data** under More, About and storage, deletes them.
 
 ## Chrome extension
 
@@ -194,6 +195,7 @@ What the player does on a slow computer:
 - **Voice.** Kokoro-82M runs through [ONNX Runtime Web](https://onnxruntime.ai/) in a Web Worker: on the graphics chip with WebGPU when its output passes a check, otherwise on the processor with multi-threaded WebAssembly and an 8-bit version of the model. Every generated chunk is checked (NaN samples, clipping, audio that stops early), and if the graphics chip produces bad audio Narrata moves to the processor for good. The Piper voices run the same way on the processor.
 - **Pronunciation.** Kokoro reads phonemes, not letters. Narrata converts English with a TypeScript port of [misaki](https://github.com/hexgrad/misaki), the converter Kokoro was trained with: its American and British dictionaries, its rules for endings and numbers, a small part-of-speech tagger for words spelled alike ("I read" and "I will read") and its neural network for unknown words. It also reads clock times, common abbreviations, units and web addresses. For Piper, the same phonemes are mapped to the symbols eSpeak would produce.
 - **Word highlighting.** The models predict how long each phoneme lasts, and the converter knows which word each phoneme came from, so the highlight follows the voice word by word. Piper does not output these durations, so Narrata adds the output to the model graph when it loads it.
+- **Your pronunciations.** Before the text goes to the phonemizer, each word on your list is replaced by the spelling you gave. The phonemes of that spelling are then credited to the original word, so the highlight stays on the word as it is written on the page.
 - **Speed without chipmunks.** Audio is generated at normal speed and played through [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/), which keeps the pitch. All chunks go into one continuous buffer, so there are no gaps between sentences.
 - **Storage.** Models are saved in the Origin Private File System, so later visits load them from disk in about a second. A service worker caches the app and adds the cross-origin isolation headers that multi-threaded WebAssembly needs, which is how it runs on static hosting such as GitHub Pages.
 - **Documents.** [pdf.js](https://mozilla.github.io/pdf.js/) for PDFs, [Readability](https://github.com/mozilla/readability) for web pages, and a small EPUB reader built on [fflate](https://github.com/101arrowz/fflate).

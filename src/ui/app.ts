@@ -7,10 +7,12 @@ import { lastAtOrBefore, tokenizeWords, wordIndexAt } from '../core/text';
 import { ACCEPT, loadFile, loadPastedText } from '../docs';
 import type { LoadedDoc } from '../docs/types';
 import { TtsClient, type EngineInfo } from '../engine/client';
+import { MAX_SAY_AS_LENGTH, MAX_WORD_LENGTH, type Pronunciation } from '../engine/g2p/pronunciations';
 import { downloadSize, type Variant } from '../engine/model-store';
 import type { Tuning } from '../engine/protocol';
 import { DEFAULT_VOICE, PIPER_VOICES, VOICES, accentLabel, fastVoiceFor, isPiper, voiceById } from '../engine/voices';
 import { Library, type DocMeta } from '../store/library';
+import { loadPronunciations, savePronunciations, upsertPronunciation } from '../store/pronunciations';
 import { loadSettings, saveSettings, type Settings } from '../store/settings';
 import { h, isTypingTarget, prefersReducedMotion } from './dom';
 import { icons, logo } from './icons';
@@ -62,6 +64,7 @@ const RATE_PRESETS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 
 export class App {
   settings: Settings = loadSettings();
+  pronunciations: Pronunciation[] = loadPronunciations();
   readonly tts: TtsClient;
   readonly player: Player;
   readonly library = new Library();
@@ -91,6 +94,7 @@ export class App {
   constructor(root: HTMLElement) {
     this.applyAppearance();
     this.tts = new TtsClient(this.settings.model, this.settings.voice, tuningFromUrl());
+    if (this.pronunciations.length) this.tts.setPronunciations(this.pronunciations);
     this.player = new Player(this.tts, {
       onState: (s) => this.onPlayerState(s),
       onWord: (w) => this.onWord(w),
@@ -1246,6 +1250,7 @@ export class App {
       h(
         'div',
         { class: 'pop-section' },
+        item(icons.pronounce, 'Pronunciations', this.pronunciations.length ? `${this.pronunciations.length} word${this.pronunciations.length === 1 ? '' : 's'}` : 'Teach Narrata how to say a word', () => this.pronunciationsDialog()),
         item(icons.download, 'Export audio', this.doc ? 'Save this document as an audio file' : 'Open a document first', () => void this.exportDialog(), !this.doc),
         item(icons.keyboard, 'Keyboard shortcuts', null, () => this.shortcutsDialog()),
         item(icons.info, 'About and storage', null, () => this.aboutDialog()),
@@ -1276,6 +1281,109 @@ export class App {
       ),
     ]);
     area.focus();
+  }
+
+  /** Replace the pronunciation list: save it, send it to the voice and redo the audio from here. */
+  setPronunciations(list: Pronunciation[]) {
+    this.pronunciations = list;
+    savePronunciations(list);
+    this.tts.setPronunciations(list);
+    this.player.regenerate();
+  }
+
+  /** A short text selected in the document, to start a pronunciation with. */
+  private selectedWord(): string {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !this.doc || !sel.anchorNode || !this.doc.view.el.contains(sel.anchorNode)) return '';
+    const text = sel.toString().replace(/\s+/g, ' ').trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+    return text.length <= MAX_WORD_LENGTH ? text : '';
+  }
+
+  /** Say a piece of text with the current voice (pauses reading, like the voice preview). */
+  private async sayAloud(text: string, btn: HTMLButtonElement) {
+    if (!text.trim()) return;
+    if (!this.tts.ready) {
+      if (this.tts.info.state === 'needs-download' && !(await this.confirmDownload())) return;
+      await this.tts.prepare(this.settings.model, this.settings.voice).catch(() => {});
+      if (!this.tts.ready) return;
+    }
+    btn.setAttribute('aria-busy', 'true');
+    btn.innerHTML = icons.spinner;
+    try {
+      await this.tts.ensureVoice(this.settings.voice);
+      await this.player.preview(this.settings.voice, text, () => (btn.innerHTML = icons.speaker));
+    } catch (e) {
+      toast(`Could not play it: ${(e as Error).message}`, { error: true });
+    } finally {
+      btn.removeAttribute('aria-busy');
+      btn.innerHTML = icons.play;
+    }
+  }
+
+  private pronunciationsDialog() {
+    const word = h('input', { type: 'text', placeholder: 'Word, as written', 'aria-label': 'Word', maxlength: MAX_WORD_LENGTH, value: this.selectedWord(), autocomplete: 'off', spellcheck: 'false' }) as HTMLInputElement;
+    const sayAs = h('input', { type: 'text', placeholder: 'Say it as', 'aria-label': 'Say it as', maxlength: MAX_SAY_AS_LENGTH, autocomplete: 'off', spellcheck: 'false' }) as HTMLInputElement;
+    const listenBtn = h('button', { class: 'btn', type: 'button', 'aria-label': 'Listen', title: 'Listen', html: `${icons.play}<span>Listen</span>` }) as HTMLButtonElement;
+    const addBtn = h('button', { class: 'btn btn-primary', type: 'submit' }, 'Add') as HTMLButtonElement;
+    const list = h('ul', { class: 'pron-list', 'aria-label': 'Your pronunciations' });
+    const icon = (html: string, label: string, onclick: (b: HTMLButtonElement) => void) => {
+      const b = h('button', { class: 'icon-btn', type: 'button', 'aria-label': label, title: label, html }) as HTMLButtonElement;
+      b.addEventListener('click', () => onclick(b));
+      return b;
+    };
+    const renderList = () => {
+      list.replaceChildren(
+        ...this.pronunciations.map((p) => {
+          const input = h('input', { type: 'text', value: p.sayAs, 'aria-label': `Say ${p.word} as`, maxlength: MAX_SAY_AS_LENGTH, autocomplete: 'off', spellcheck: 'false' }) as HTMLInputElement;
+          input.addEventListener('change', () => {
+            if (!input.value.trim()) {
+              input.value = p.sayAs;
+              return;
+            }
+            this.setPronunciations(upsertPronunciation(this.pronunciations, { word: p.word, sayAs: input.value }));
+          });
+          return h(
+            'li',
+            { class: 'pron-row' },
+            h('span', { class: 'pron-word', title: p.word }, p.word),
+            input,
+            icon(icons.play, `Listen to ${p.word}`, (b) => void this.sayAloud(input.value, b)),
+            icon(icons.trash, `Remove ${p.word}`, () => {
+              this.setPronunciations(this.pronunciations.filter((x) => x.word.toLocaleLowerCase() !== p.word.toLocaleLowerCase()));
+              renderList();
+              word.focus();
+            }),
+          );
+        }),
+      );
+      list.hidden = this.pronunciations.length === 0;
+    };
+    const sync = () => {
+      addBtn.disabled = !word.value.trim() || !sayAs.value.trim();
+      listenBtn.disabled = !sayAs.value.trim();
+    };
+    word.addEventListener('input', sync);
+    sayAs.addEventListener('input', sync);
+    listenBtn.addEventListener('click', () => void this.sayAloud(sayAs.value, listenBtn));
+    const form = h('form', { class: 'pron-form' }, h('div', { class: 'pron-fields' }, word, sayAs), h('div', { class: 'pron-actions' }, listenBtn, addBtn));
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (addBtn.disabled) return;
+      this.setPronunciations(upsertPronunciation(this.pronunciations, { word: word.value, sayAs: sayAs.value }));
+      word.value = '';
+      sayAs.value = '';
+      sync();
+      renderList();
+      word.focus();
+    });
+    sync();
+    renderList();
+    sheet('Pronunciations', [
+      h('p', { class: 'sheet-text' }, 'Tell Narrata how to say a word: write it the way it sounds, such as “nginx” as “engine x”. It applies to every document and voice, and stays in this browser.'),
+      form,
+      list,
+    ]);
+    (word.value ? sayAs : word).focus();
   }
 
   private shortcutsDialog() {

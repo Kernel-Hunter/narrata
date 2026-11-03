@@ -514,6 +514,16 @@ export class Player {
     else if (this.started) this.resetPlayback();
   }
 
+  /**
+   * Generate everything again from the current word, for a change that alters the audio but not
+   * the text (the pronunciation list): drops the cached audio and, while reading, restarts there.
+   */
+  regenerate(): void {
+    this.cache.clear();
+    if (this.state === 'playing' || this.state === 'buffering' || this.state === 'loading') void this.playFrom(this.currentOffset());
+    else if (this.started) this.resetPlayback();
+  }
+
   /** Offset of the word being read (or last read). */
   currentOffset(): number {
     if (!this.pdoc) return 0;

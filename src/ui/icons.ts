@@ -32,6 +32,7 @@ export const icons = {
   stop: `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg>`,
   spinner: `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" class="spin"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-width="2.2"/><path d="M12 3.5a8.5 8.5 0 0 1 8.5 8.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`,
   keyboard: svg('<rect x="3" y="6.5" width="18" height="11" rx="2"/><path d="M7 10h.01M10 10h.01M13 10h.01M16 10h.01M8 14h8"/>'),
+  pronounce: svg('<path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 19 16h-7l-4.5 3.5V16H5a1.5 1.5 0 0 1-1.5-1.5v-8A1.5 1.5 0 0 1 5 5Z"/><path d="M8 9.5h8M8 12.5h5"/>'),
   info: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/>'),
 };
 

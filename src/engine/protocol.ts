@@ -1,5 +1,6 @@
 import type { ChunkEnd } from '../core/chunker';
 import type { DeviceProbe } from '../core/device';
+import type { Pronunciation } from './g2p/pronunciations';
 import type { Variant } from './model-store';
 import type { SessionTuning } from './runtime';
 
@@ -71,6 +72,8 @@ export type ToWorker =
   | ExportRequest
   | { type: 'export-cancel'; id: number }
   | { type: 'clear' }
+  /** Replace the pronunciation list (applies to chunks generated from now on). */
+  | { type: 'pronunciations'; list: Pronunciation[] }
   /** Run the device check again (on the first run it replaces the one made at start). */
   | { type: 'probe' };
 

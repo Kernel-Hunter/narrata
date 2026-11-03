@@ -9,7 +9,8 @@ import { cpuVariant as pickCpuVariant, threadCount as pickThreads } from '../cor
 import { tokenizeWords } from '../core/text';
 import { fetchData } from './g2p/assets';
 import { EnglishG2P } from './g2p/english';
-import type { G2P, PhonemeToken } from './g2p/types';
+import { Pronouncer, phonemizeWith } from './g2p/pronunciations';
+import type { G2P, PhonemeToken, VoiceLang } from './g2p/types';
 import { MODEL_FILES, ModelStore, PIPER_SOURCE, SUPPORT_FILES, VOICE_BYTES, downloadSize, voicePath, type Variant } from './model-store';
 import { PiperModel, phonemeDurations, piperInput, resample, type PiperConfig } from './piper/piper';
 import { createSession, loadRuntime, type OrtModule, type Session } from './runtime';
@@ -28,6 +29,9 @@ const TEST_SENTENCE = 'Hello! This is a short test of the voice, to check that e
 const store = new ModelStore();
 const piperStore = new ModelStore(PIPER_SOURCE);
 const g2p: G2P = new EnglishG2P(fetchData);
+/** The reader's pronunciation list, applied to every chunk before the G2P. */
+let pronouncer = new Pronouncer([]);
+const phonemize = (text: string, lang: VoiceLang) => phonemizeWith(g2p, pronouncer, text, lang);
 let model: Session | null = null;
 /** The Kokoro model to load when a Kokoro voice is used (set by prepare). */
 let kokoroPlan: { variant: Variant; device: Device } | null = null;
@@ -301,7 +305,7 @@ function modelPhonemes(tokens: PhonemeToken[]): { phonemes: string[]; owner: num
 /** Generate one piece of text with a Piper voice (resampled to the app's sample rate). */
 async function synthesizePiper(text: string, v: PiperVoice): Promise<Synth> {
   const pm = await ensurePiper(v);
-  const g = await g2p.phonemize(text, v.lang);
+  const g = await phonemize(text, v.lang);
   const input = piperInput(g.tokens, v.lang === 'b', pm.config.phoneme_id_map);
   const textWords = tokenizeWords(text);
   if (!input.phonemes.length) return { audio: new Float32Array(Math.round(SAMPLE_RATE * 0.1)), timing: { starts: textWords.map(() => 0), ends: textWords.map(() => 0), speechEnd: 0, method: 'proportional' } };
@@ -327,7 +331,7 @@ async function synthesize(text: string, voiceId: string): Promise<Synth> {
 async function synthesizeKokoro(text: string, voiceId: string): Promise<Synth> {
   const v = voiceById(voiceId);
   const voice = await ensureVoice(v.id);
-  const g = await g2p.phonemize(text, v.lang);
+  const g = await phonemize(text, v.lang);
   const { phonemes, owner, dropped } = modelPhonemes(g.tokens);
   if (dropped) console.warn(`Narrata: ${dropped} phoneme symbols are not in the voice model's vocabulary`, g.phonemes);
   const textWords = tokenizeWords(text);
@@ -517,6 +521,10 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         post({ type: 'status', status: status(m.choice) });
         break;
       }
+      case 'pronunciations':
+        // Chunks already queued keep the old list; the player asks for them again (Player.restart).
+        pronouncer = new Pronouncer(m.list);
+        break;
       case 'select':
         lastChoice = m.choice;
         selected = m.voice;
