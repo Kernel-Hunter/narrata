@@ -10,6 +10,7 @@ async function boot() {
   // In production the service worker adds the cross-origin isolation headers (needed for
   // multi-threaded WebAssembly) and caches the app for offline use. It may reload the page once.
   if (import.meta.env.PROD && !(await registerServiceWorker(root))) return;
+  root.replaceChildren(); // drop the static intro from index.html
   const app = new App(root);
   // The first install took very long and the app started single-threaded: offer the reload.
   onIsolationReady(() => toast('Narrata is ready to use all processor cores.', { action: 'Reload', onAction: reloadForIsolation, ms: 60_000 }));

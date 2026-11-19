@@ -389,7 +389,7 @@ export class App {
     this.closeDoc();
     // Nothing to play yet: the player appears with the first document.
     this.bar.el.hidden = true;
-    document.title = 'Narrata';
+    document.title = 'Narrata: Free Read Aloud App, Open-Source Speechify Alternative';
     const words = 'Reads anything aloud with a natural voice that runs on your device.'.split(' ');
     const hero = h('h1', { class: 'hero-line' }, ...words.flatMap((w, i) => [h('span', { class: 'w' }, w), i < words.length - 1 ? ' ' : '']));
     this.voiceCard = h('section', { class: 'voice-card', 'aria-live': 'polite' });
